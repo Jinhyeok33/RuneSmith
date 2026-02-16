@@ -1,7 +1,22 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { SkillBlueprint } from '@runesmith/shared';
 
+interface User {
+  id: number;
+  username: string;
+  email: string;
+  world_tier: number;
+  player_level: number;
+  points: number;
+  rune_crystals: number;
+}
+
 interface GameState {
+  // Authentication
+  user: User | null;
+  isAuthenticated: boolean;
+
   // Player
   worldTier: number;
   runeCrystals: number;
@@ -13,6 +28,11 @@ interface GameState {
 
   // Forge
   lastCompiledSkill: SkillBlueprint | null;
+
+  // Auth Actions
+  setUser: (user: User | null) => void;
+  logout: () => void;
+  syncFromUser: (user: User) => void;
 
   // Actions
   setWorldTier: (tier: number) => void;
@@ -26,15 +46,41 @@ interface GameState {
   spendPoints: (amount: number) => boolean;
 }
 
-export const useGameStore = create<GameState>((set, get) => ({
-  worldTier: 1,
-  runeCrystals: 100,
-  points: 500,
-  skills: [],
-  deck: [],
-  lastCompiledSkill: null,
+export const useGameStore = create<GameState>()(
+  persist(
+    (set, get) => ({
+      user: null,
+      isAuthenticated: false,
+      worldTier: 1,
+      runeCrystals: 100,
+      points: 500,
+      skills: [],
+      deck: [],
+      lastCompiledSkill: null,
 
-  setWorldTier: (tier) => set({ worldTier: tier }),
+      setUser: (user) => set({
+        user,
+        isAuthenticated: !!user,
+        worldTier: user?.world_tier ?? 1,
+        points: user?.points ?? 500,
+        runeCrystals: user?.rune_crystals ?? 100,
+      }),
+
+      logout: () => set({
+        user: null,
+        isAuthenticated: false,
+        skills: [],
+        deck: [],
+      }),
+
+      syncFromUser: (user) => set({
+        user,
+        worldTier: user.world_tier,
+        points: user.points,
+        runeCrystals: user.rune_crystals,
+      }),
+
+      setWorldTier: (tier) => set({ worldTier: tier }),
 
   addSkill: (skill) =>
     set((state) => ({ skills: [...state.skills, skill] })),
@@ -68,4 +114,9 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({ points: points - amount });
     return true;
   },
-}));
+    }),
+    {
+      name: 'runesmith-game-storage',
+    }
+  )
+);
