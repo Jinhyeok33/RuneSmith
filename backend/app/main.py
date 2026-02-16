@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 from app.api.compile import router as compile_router
 from app.api.auth import router as auth_router
+from app.api.market import router as market_router
 from app.database.session import init_db, close_db
 
 # Load environment variables from .env file in project root
@@ -44,6 +45,7 @@ app.add_middleware(
 # Include routers
 app.include_router(compile_router)
 app.include_router(auth_router)
+app.include_router(market_router)
 
 
 @app.get("/health")
