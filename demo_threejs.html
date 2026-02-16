@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RuneSmith — Three.js 3D 마법 데모</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Noto+Sans+KR:wght@400;700&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{overflow:hidden;background:#000;font-family:'Noto Sans KR',sans-serif;color:#e8e0f0}
+  #c{display:block;width:100vw;height:100vh}
+  .ui{position:fixed;bottom:0;left:0;right:0;z-index:10;padding:20px 30px;display:flex;flex-direction:column;gap:12px;pointer-events:none}
+  .title-bar{text-align:center;pointer-events:none}
+  .title-bar h1{font-family:'Cinzel Decorative',serif;font-size:14px;letter-spacing:4px;color:#a78bfa;text-transform:uppercase;margin-bottom:4px;text-shadow:0 0 20px rgba(139,92,246,0.5)}
+  .title-bar p{font-size:11px;color:#7c6fa0;letter-spacing:1px}
+  .spells{display:flex;gap:14px;justify-content:center;pointer-events:auto}
+  .spell{
+    width:150px;padding:16px 10px 12px;
+    border:1px solid rgba(120,80,200,0.25);border-radius:14px;
+    background:rgba(20,10,45,0.6);backdrop-filter:blur(16px);
+    cursor:pointer;text-align:center;transition:all .25s cubic-bezier(.22,1,.36,1);
+    user-select:none;position:relative;overflow:hidden;
+  }
+  .spell::before{content:'';position:absolute;inset:0;border-radius:14px;opacity:0;transition:opacity .3s}
+  .spell:hover::before{opacity:1}
+  .spell:hover{transform:translateY(-5px);border-color:rgba(255,255,255,0.18)}
+  .spell:active{transform:translateY(-1px) scale(.97)}
+  .spell.fire::before{background:radial-gradient(ellipse at 50% 80%,rgba(249,115,22,0.5),transparent 70%)}
+  .spell.ice::before{background:radial-gradient(ellipse at 50% 80%,rgba(56,189,248,0.5),transparent 70%)}
+  .spell.lightning::before{background:radial-gradient(ellipse at 50% 80%,rgba(250,204,21,0.5),transparent 70%)}
+  .spell.heal::before{background:radial-gradient(ellipse at 50% 80%,rgba(52,211,153,0.5),transparent 70%)}
+  .sp-icon{font-size:30px;display:block;margin-bottom:4px}
+  .sp-name{font-family:'Cinzel Decorative',serif;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+  .spell.fire .sp-name{color:#f97316}
+  .spell.ice .sp-name{color:#38bdf8}
+  .spell.lightning .sp-name{color:#facc15}
+  .spell.heal .sp-name{color:#34d399}
+  .sp-desc{font-size:8px;color:#5a4e70;margin-top:3px}
+  .label{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:10;
+    font-family:'Cinzel Decorative',serif;font-size:13px;letter-spacing:3px;color:#8b5cf6;
+    background:rgba(10,5,20,0.7);padding:8px 24px;border-radius:20px;border:1px solid rgba(139,92,246,0.2);
+    backdrop-filter:blur(10px);text-transform:uppercase}
+  @media(max-width:700px){
+    .spell{width:80px;padding:10px 5px 8px}
+    .sp-icon{font-size:22px}
+    .sp-name{font-size:8px}
+    .sp-desc{display:none}
+    .ui{padding:12px 10px}
+  }
+</style>
+</head>
+<body>
+<div class="label">Three.js — 3D 마법 이펙트</div>
+<canvas id="c"></canvas>
+<div class="ui">
+  <div class="title-bar">
+    <h1>3D Spell Showcase</h1>
+    <p>각 마법 버튼을 클릭하세요</p>
+  </div>
+  <div class="spells">
+    <div class="spell fire" onclick="castSpell('fire')"><span class="sp-icon">&#x1F525;</span><span class="sp-name">화염구</span><span class="sp-desc">3D 불덩이 + 볼류메트릭</span></div>
+    <div class="spell ice" onclick="castSpell('ice')"><span class="sp-icon">&#x2744;&#xFE0F;</span><span class="sp-name">빙결</span><span class="sp-desc">3D 얼음 결정 + 파쇄</span></div>
+    <div class="spell lightning" onclick="castSpell('lightning')"><span class="sp-icon">&#x26A1;</span><span class="sp-name">낙뢰</span><span class="sp-desc">3D 볼트 + 블룸</span></div>
+    <div class="spell heal" onclick="castSpell('heal')"><span class="sp-icon">&#x2728;</span><span class="sp-name">치유진</span><span class="sp-desc">3D 마법진 + 빔</span></div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// =================== SETUP ===================
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x06030f, 0.015);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 4, 12);
+camera.lookAt(0, 1, 0);
+
+// Post-processing: Bloom
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.2, 0.5, 0.3);
+composer.addPass(bloom);
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+
+// =================== ENVIRONMENT ===================
+// Ground plane
+const groundGeo = new THREE.PlaneGeometry(60, 60);
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x0a0618, metalness: 0.8, roughness: 0.4,
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Grid lines on ground
+const gridHelper = new THREE.GridHelper(40, 40, 0x1a0f30, 0x12091f);
+gridHelper.position.y = 0.01;
+scene.add(gridHelper);
+
+// Ambient light
+scene.add(new THREE.AmbientLight(0x1a0f30, 0.8));
+
+// Main directional light
+const dirLight = new THREE.DirectionalLight(0x6d28d9, 0.4);
+dirLight.position.set(5, 10, 5);
+scene.add(dirLight);
+
+// Floating orb particles in background
+const orbGeo = new THREE.BufferGeometry();
+const orbCount = 200;
+const orbPositions = new Float32Array(orbCount * 3);
+const orbColors = new Float32Array(orbCount * 3);
+for (let i = 0; i < orbCount; i++) {
+  orbPositions[i*3] = (Math.random() - 0.5) * 40;
+  orbPositions[i*3+1] = Math.random() * 15;
+  orbPositions[i*3+2] = (Math.random() - 0.5) * 40;
+  const c = new THREE.Color().setHSL(0.75 + Math.random() * 0.1, 0.7, 0.3 + Math.random() * 0.3);
+  orbColors[i*3] = c.r; orbColors[i*3+1] = c.g; orbColors[i*3+2] = c.b;
+}
+orbGeo.setAttribute('position', new THREE.BufferAttribute(orbPositions, 3));
+orbGeo.setAttribute('color', new THREE.BufferAttribute(orbColors, 3));
+const orbMat = new THREE.PointsMaterial({ size: 0.08, vertexColors: true, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending });
+const orbs = new THREE.Points(orbGeo, orbMat);
+scene.add(orbs);
+
+// Target crystal (enemy placeholder)
+const crystalGroup = new THREE.Group();
+const crystalGeo = new THREE.OctahedronGeometry(0.8, 0);
+const crystalMat = new THREE.MeshStandardMaterial({
+  color: 0x6d28d9, emissive: 0x3b0764, emissiveIntensity: 0.5,
+  metalness: 0.9, roughness: 0.1, transparent: true, opacity: 0.85,
+});
+const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+crystal.scale.set(1, 1.5, 1);
+crystal.position.y = 2;
+crystalGroup.add(crystal);
+
+// Crystal inner glow
+const innerGlow = new THREE.PointLight(0x8b5cf6, 2, 8);
+innerGlow.position.y = 2;
+crystalGroup.add(innerGlow);
+
+crystalGroup.position.set(0, 0, -2);
+scene.add(crystalGroup);
+
+// =================== SPELL SYSTEM ===================
+let activeSpells = [];
+const clock = new THREE.Clock();
+
+class SpellEffect {
+  constructor() { this.done = false; this.objects = []; }
+  update(dt, t) {}
+  dispose() { this.objects.forEach(o => { scene.remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
+}
+
+// ---------- FIREBALL ----------
+class FireballSpell extends SpellEffect {
+  constructor() {
+    super();
+    this.time = 0; this.phase = 0; // 0=fly, 1=explode
+
+    // Fireball mesh: glowing sphere
+    const geo = new THREE.SphereGeometry(0.4, 16, 16);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xf97316, emissive: 0xf97316, emissiveIntensity: 3,
+      transparent: true, opacity: 0.9
+    });
+    this.ball = new THREE.Mesh(geo, mat);
+    this.ball.position.set(0, 2, 8);
+    scene.add(this.ball);
+    this.objects.push(this.ball);
+
+    // Fireball point light
+    this.light = new THREE.PointLight(0xf97316, 5, 12);
+    this.ball.add(this.light);
+
+    // Trail particles
+    this.trailGeo = new THREE.BufferGeometry();
+    this.maxTrail = 500;
+    this.trailPositions = new Float32Array(this.maxTrail * 3);
+    this.trailSizes = new Float32Array(this.maxTrail);
+    this.trailOpacities = new Float32Array(this.maxTrail);
+    this.trailIdx = 0;
+    this.trailGeo.setAttribute('position', new THREE.BufferAttribute(this.trailPositions, 3));
+    this.trailGeo.setAttribute('size', new THREE.BufferAttribute(this.trailSizes, 1));
+
+    const trailMat = new THREE.PointsMaterial({
+      color: 0xfbbf24, size: 0.15, transparent: true, opacity: 0.7,
+      blending: THREE.AdditiveBlending, sizeAttenuation: true
+    });
+    this.trail = new THREE.Points(this.trailGeo, trailMat);
+    scene.add(this.trail);
+    this.objects.push(this.trail);
+
+    // Explosion particles (pre-allocate)
+    this.explGeo = new THREE.BufferGeometry();
+    this.explCount = 300;
+    this.explPositions = new Float32Array(this.explCount * 3);
+    this.explVelocities = [];
+    this.explGeo.setAttribute('position', new THREE.BufferAttribute(this.explPositions, 3));
+    const explMat = new THREE.PointsMaterial({
+      color: 0xf97316, size: 0.12, transparent: true, blending: THREE.AdditiveBlending, sizeAttenuation: true
+    });
+    this.expl = new THREE.Points(this.explGeo, explMat);
+    this.expl.visible = false;
+    scene.add(this.expl);
+    this.objects.push(this.expl);
+
+    // Explosion light
+    this.explLight = new THREE.PointLight(0xf97316, 0, 20);
+    this.explLight.position.set(0, 2, -2);
+    scene.add(this.explLight);
+    this.objects.push(this.explLight);
+  }
+  update(dt, t) {
+    this.time += dt;
+
+    if (this.phase === 0) {
+      // Fly towards target
+      const p = Math.min(1, this.time / 1.2);
+      const ep = p * p * (3 - 2 * p);
+      this.ball.position.z = 8 - 10 * ep;
+      this.ball.position.y = 2 + Math.sin(p * Math.PI) * 2;
+      this.ball.position.x = Math.sin(p * 4) * 0.3;
+
+      // Wobbly scale
+      const s = 1 + Math.sin(t * 15) * 0.15;
+      this.ball.scale.set(s, s, s);
+
+      // Trail
+      const idx = this.trailIdx % this.maxTrail;
+      this.trailPositions[idx * 3] = this.ball.position.x + (Math.random() - 0.5) * 0.3;
+      this.trailPositions[idx * 3 + 1] = this.ball.position.y + (Math.random() - 0.5) * 0.3;
+      this.trailPositions[idx * 3 + 2] = this.ball.position.z + (Math.random() - 0.5) * 0.3;
+      this.trailIdx++;
+      this.trailGeo.attributes.position.needsUpdate = true;
+      this.trailGeo.setDrawRange(0, Math.min(this.trailIdx, this.maxTrail));
+
+      // Light intensity follows
+      this.light.intensity = 3 + Math.sin(t * 20) * 1;
+
+      if (p >= 1) {
+        this.phase = 1;
+        this.time = 0;
+        this.ball.visible = false;
+
+        // Init explosion
+        this.expl.visible = true;
+        const pos = new THREE.Vector3(0, 2, -2);
+        for (let i = 0; i < this.explCount; i++) {
+          const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+          const spd = 2 + Math.random() * 6;
+          this.explVelocities.push(dir.multiplyScalar(spd));
+          this.explPositions[i*3] = pos.x;
+          this.explPositions[i*3+1] = pos.y;
+          this.explPositions[i*3+2] = pos.z;
+        }
+        this.explLight.intensity = 15;
+
+        // Camera shake
+        cameraShake = 0.5;
+        bloom.strength = 2.5;
+      }
+    }
+    else if (this.phase === 1) {
+      // Explosion
+      const fade = Math.max(0, 1 - this.time / 2);
+      for (let i = 0; i < this.explCount; i++) {
+        const v = this.explVelocities[i];
+        this.explPositions[i*3] += v.x * dt;
+        this.explPositions[i*3+1] += v.y * dt - dt * 2;
+        this.explPositions[i*3+2] += v.z * dt;
+      }
+      this.explGeo.attributes.position.needsUpdate = true;
+      this.expl.material.opacity = fade * 0.8;
+      this.explLight.intensity = fade * 15;
+      bloom.strength = 1.2 + fade * 1.5;
+
+      if (this.time > 2.5) {
+        this.done = true;
+        bloom.strength = 1.2;
+      }
+    }
+  }
+}
+
+// ---------- ICE ----------
+class IceSpell extends SpellEffect {
+  constructor() {
+    super();
+    this.time = 0; this.phase = 0;
+    this.shards = [];
+
+    // Ice lance: elongated crystal
+    const geo = new THREE.ConeGeometry(0.2, 2.5, 6);
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: 0x7dd3fc, emissive: 0x38bdf8, emissiveIntensity: 1,
+      metalness: 0.1, roughness: 0, transmission: 0.6, thickness: 0.5,
+      transparent: true, opacity: 0.85
+    });
+    this.lance = new THREE.Mesh(geo, mat);
+    this.lance.rotation.x = Math.PI / 2;
+    this.lance.position.set(0, 2, 8);
+    scene.add(this.lance);
+    this.objects.push(this.lance);
+
+    this.iceLight = new THREE.PointLight(0x38bdf8, 3, 10);
+    this.lance.add(this.iceLight);
+
+    // Frost trail
+    this.frostGeo = new THREE.BufferGeometry();
+    this.maxFrost = 300;
+    this.frostPositions = new Float32Array(this.maxFrost * 3);
+    this.frostIdx = 0;
+    this.frostGeo.setAttribute('position', new THREE.BufferAttribute(this.frostPositions, 3));
+    const frostMat = new THREE.PointsMaterial({
+      color: 0xbae6fd, size: 0.08, transparent: true, opacity: 0.6,
+      blending: THREE.AdditiveBlending, sizeAttenuation: true
+    });
+    this.frost = new THREE.Points(this.frostGeo, frostMat);
+    scene.add(this.frost);
+    this.objects.push(this.frost);
+
+    // Explosion light
+    this.shatterLight = new THREE.PointLight(0x38bdf8, 0, 15);
+    this.shatterLight.position.set(0, 2, -2);
+    scene.add(this.shatterLight);
+    this.objects.push(this.shatterLight);
+  }
+  update(dt, t) {
+    this.time += dt;
+    if (this.phase === 0) {
+      const p = Math.min(1, this.time / 0.8);
+      const ep = p < 0.5 ? 2*p*p : 1 - Math.pow(-2*p+2,2)/2;
+      this.lance.position.z = 8 - 10 * ep;
+      this.lance.position.y = 2;
+      this.lance.rotation.z = t * 8;
+
+      // Frost trail
+      for (let j = 0; j < 3; j++) {
+        const idx = this.frostIdx % this.maxFrost;
+        this.frostPositions[idx*3] = this.lance.position.x + (Math.random()-.5)*0.5;
+        this.frostPositions[idx*3+1] = this.lance.position.y + (Math.random()-.5)*0.5;
+        this.frostPositions[idx*3+2] = this.lance.position.z + (Math.random()-.5)*0.5;
+        this.frostIdx++;
+      }
+      this.frostGeo.attributes.position.needsUpdate = true;
+      this.frostGeo.setDrawRange(0, Math.min(this.frostIdx, this.maxFrost));
+
+      if (p >= 1) {
+        this.phase = 1;
+        this.time = 0;
+        this.lance.visible = false;
+        cameraShake = 0.3;
+        this.shatterLight.intensity = 10;
+        bloom.strength = 2;
+
+        // Create shards
+        for (let i = 0; i < 20; i++) {
+          const shardGeo = new THREE.OctahedronGeometry(0.15 + Math.random() * 0.2, 0);
+          const shardMat = new THREE.MeshPhysicalMaterial({
+            color: 0xbae6fd, emissive: 0x38bdf8, emissiveIntensity: 1.5,
+            transparent: true, opacity: 0.8, transmission: 0.4, roughness: 0
+          });
+          const shard = new THREE.Mesh(shardGeo, shardMat);
+          shard.position.set((Math.random()-.5)*0.5 , 2 + (Math.random()-.5)*0.5, -2 + (Math.random()-.5)*0.5);
+          const dir = new THREE.Vector3(Math.random()-.5, Math.random()-.5, Math.random()-.5).normalize();
+          shard.userData.vel = dir.multiplyScalar(2 + Math.random() * 4);
+          shard.userData.rotVel = new THREE.Vector3(Math.random()*5, Math.random()*5, Math.random()*5);
+          scene.add(shard);
+          this.shards.push(shard);
+          this.objects.push(shard);
+        }
+
+        // Ground crystals
+        for (let i = 0; i < 8; i++) {
+          const cGeo = new THREE.ConeGeometry(0.08 + Math.random()*0.1, 0.5 + Math.random()*0.8, 5);
+          const cMat = new THREE.MeshPhysicalMaterial({
+            color: 0x7dd3fc, emissive: 0x38bdf8, emissiveIntensity: 1,
+            transparent: true, opacity: 0.7, transmission: 0.5, roughness: 0
+          });
+          const c = new THREE.Mesh(cGeo, cMat);
+          c.position.set((Math.random()-.5)*3, 0, -2 + (Math.random()-.5)*2);
+          c.rotation.z = (Math.random()-.5)*0.5;
+          c.scale.y = 0;
+          c.userData.targetScale = 1;
+          scene.add(c);
+          this.objects.push(c);
+          this.shards.push(c); // reuse array for ground crystals
+        }
+      }
+    }
+    else if (this.phase === 1) {
+      const fade = Math.max(0, 1 - this.time / 3);
+      this.shatterLight.intensity = fade * 8;
+      bloom.strength = 1.2 + fade;
+
+      for (const s of this.shards) {
+        if (s.userData.vel) {
+          s.position.add(s.userData.vel.clone().multiplyScalar(dt));
+          s.userData.vel.y -= dt * 5;
+          s.rotation.x += s.userData.rotVel.x * dt;
+          s.rotation.y += s.userData.rotVel.y * dt;
+          s.material.opacity = fade * 0.8;
+        }
+        if (s.userData.targetScale !== undefined) {
+          s.scale.y = Math.min(s.userData.targetScale, s.scale.y + dt * 3) * fade;
+        }
+      }
+
+      if (this.time > 3) { this.done = true; bloom.strength = 1.2; }
+    }
+  }
+}
+
+// ---------- LIGHTNING ----------
+class LightningSpell extends SpellEffect {
+  constructor() {
+    super();
+    this.time = 0; this.phase = 0;
+    this.boltMeshes = [];
+    this.chargeParticles = [];
+
+    // Charge particles
+    const cpGeo = new THREE.BufferGeometry();
+    this.cpCount = 60;
+    this.cpPositions = new Float32Array(this.cpCount * 3);
+    this.cpData = [];
+    for (let i = 0; i < this.cpCount; i++) {
+      this.cpData.push({
+        angle: Math.random() * Math.PI * 2,
+        angleY: Math.random() * Math.PI * 2,
+        dist: 2 + Math.random() * 4,
+        speed: 0.5 + Math.random() * 1,
+        speedY: 0.3 + Math.random() * 0.5
+      });
+    }
+    cpGeo.setAttribute('position', new THREE.BufferAttribute(this.cpPositions, 3));
+    const cpMat = new THREE.PointsMaterial({
+      color: 0xfacc15, size: 0.1, transparent: true, blending: THREE.AdditiveBlending, sizeAttenuation: true
+    });
+    this.cpMesh = new THREE.Points(cpGeo, cpMat);
+    scene.add(this.cpMesh);
+    this.objects.push(this.cpMesh);
+
+    // Lightning light
+    this.boltLight = new THREE.PointLight(0xfacc15, 0, 25);
+    this.boltLight.position.set(0, 5, -2);
+    scene.add(this.boltLight);
+    this.objects.push(this.boltLight);
+  }
+  generateBoltGeometry(start, end, depth) {
+    const points = [start.clone()];
+    this._subdivide(points, start, end, depth);
+    points.push(end.clone());
+    return points;
+  }
+  _subdivide(result, a, b, depth) {
+    if (depth <= 0) return;
+    const mid = a.clone().lerp(b, 0.5);
+    const offset = (a.distanceTo(b)) * 0.3;
+    mid.x += (Math.random() - 0.5) * offset;
+    mid.z += (Math.random() - 0.5) * offset * 0.5;
+    this._subdivide(result, a, mid, depth - 1);
+    result.push(mid);
+    this._subdivide(result, mid, b, depth - 1);
+  }
+  createBoltMesh(start, end) {
+    const points = this.generateBoltGeometry(start, end, 5);
+    // Main bolt (thick glow)
+    const curve = new THREE.CatmullRomCurve3(points);
+    const tubeGeo = new THREE.TubeGeometry(curve, 40, 0.06, 4, false);
+    const tubeMat = new THREE.MeshBasicMaterial({
+      color: 0xfacc15, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending
+    });
+    const tube = new THREE.Mesh(tubeGeo, tubeMat);
+    scene.add(tube);
+    this.boltMeshes.push(tube);
+    this.objects.push(tube);
+
+    // Core (bright white thin)
+    const coreGeo = new THREE.TubeGeometry(curve, 40, 0.02, 3, false);
+    const coreMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 1,
+      blending: THREE.AdditiveBlending
+    });
+    const core = new THREE.Mesh(coreGeo, coreMat);
+    scene.add(core);
+    this.boltMeshes.push(core);
+    this.objects.push(core);
+
+    // Branch
+    if (Math.random() > 0.4) {
+      const branchStart = points[Math.floor(points.length * 0.4 + Math.random() * points.length * 0.3)];
+      const branchEnd = branchStart.clone().add(new THREE.Vector3((Math.random()-.5)*3, -1 - Math.random()*2, (Math.random()-.5)*2));
+      const bPoints = this.generateBoltGeometry(branchStart, branchEnd, 3);
+      const bCurve = new THREE.CatmullRomCurve3(bPoints);
+      const bGeo = new THREE.TubeGeometry(bCurve, 20, 0.03, 3, false);
+      const bMesh = new THREE.Mesh(bGeo, tubeMat.clone());
+      bMesh.material.opacity = 0.5;
+      scene.add(bMesh);
+      this.boltMeshes.push(bMesh);
+      this.objects.push(bMesh);
+    }
+  }
+  update(dt, t) {
+    this.time += dt;
+    const target = new THREE.Vector3(0, 2, -2);
+
+    if (this.phase === 0) {
+      // Charge phase
+      const cp = Math.min(1, this.time / 1.5);
+      for (let i = 0; i < this.cpCount; i++) {
+        const d = this.cpData[i];
+        d.angle += d.speed * dt;
+        d.angleY += d.speedY * dt;
+        const dist = d.dist * (1 - cp * 0.9);
+        this.cpPositions[i*3] = target.x + Math.cos(d.angle) * dist;
+        this.cpPositions[i*3+1] = target.y + Math.sin(d.angleY) * dist * 0.5;
+        this.cpPositions[i*3+2] = target.z + Math.sin(d.angle) * dist;
+      }
+      this.cpMesh.geometry.attributes.position.needsUpdate = true;
+      this.cpMesh.material.opacity = cp;
+
+      if (cp >= 1) {
+        this.phase = 1;
+        this.time = 0;
+        this.cpMesh.visible = false;
+
+        // Strike!
+        const skyPos = new THREE.Vector3((Math.random()-.5)*2, 15, -2 + (Math.random()-.5)*2);
+        this.createBoltMesh(skyPos, target);
+        this.boltLight.intensity = 20;
+        cameraShake = 0.7;
+        bloom.strength = 3;
+      }
+    }
+    else if (this.phase === 1) {
+      // Flicker
+      const fade = Math.max(0, 1 - this.time / 1.5);
+
+      // Regenerate bolt every few frames for flicker
+      if (this.time < 0.6 && Math.random() > 0.5) {
+        this.boltMeshes.forEach(m => { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
+        this.boltMeshes = [];
+        this.objects = this.objects.filter(o => !o.isMesh || o === this.cpMesh);
+        const skyPos = new THREE.Vector3((Math.random()-.5)*2, 15, -2 + (Math.random()-.5)*2);
+        this.createBoltMesh(skyPos, target);
+      }
+
+      this.boltMeshes.forEach(m => { m.material.opacity = fade; });
+      this.boltLight.intensity = fade * 20 * (0.5 + Math.random() * 0.5);
+      bloom.strength = 1.2 + fade * 2;
+
+      if (this.time > 2) { this.done = true; bloom.strength = 1.2; }
+    }
+  }
+}
+
+// ---------- HEAL ----------
+class HealSpell extends SpellEffect {
+  constructor() {
+    super();
+    this.time = 0;
+
+    // Magic circle - ring torus
+    const ringGeo = new THREE.TorusGeometry(2, 0.03, 8, 64);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x34d399, transparent: true, opacity: 0, blending: THREE.AdditiveBlending
+    });
+    this.ring = new THREE.Mesh(ringGeo, ringMat);
+    this.ring.rotation.x = -Math.PI / 2;
+    this.ring.position.set(0, 0.05, 2);
+    scene.add(this.ring);
+    this.objects.push(this.ring);
+
+    // Inner ring
+    const ring2Geo = new THREE.TorusGeometry(1.3, 0.02, 8, 48);
+    this.ring2 = new THREE.Mesh(ring2Geo, ringMat.clone());
+    this.ring2.rotation.x = -Math.PI / 2;
+    this.ring2.position.set(0, 0.05, 2);
+    scene.add(this.ring2);
+    this.objects.push(this.ring2);
+
+    // Rune pillars (vertical beams at rune positions)
+    this.runeBeams = [];
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const beamGeo = new THREE.CylinderGeometry(0.03, 0.03, 0, 6);
+      const beamMat = new THREE.MeshBasicMaterial({
+        color: 0x6ee7b7, transparent: true, opacity: 0, blending: THREE.AdditiveBlending
+      });
+      const beam = new THREE.Mesh(beamGeo, beamMat);
+      beam.position.set(Math.cos(a) * 2, 0, 2 + Math.sin(a) * 2);
+      beam.userData.angle = a;
+      beam.userData.baseX = Math.cos(a) * 2;
+      beam.userData.baseZ = 2 + Math.sin(a) * 2;
+      scene.add(beam);
+      this.runeBeams.push(beam);
+      this.objects.push(beam);
+    }
+
+    // Central healing beam
+    const beamGeo = new THREE.CylinderGeometry(0.15, 0.3, 0, 8);
+    const beamMat = new THREE.MeshBasicMaterial({
+      color: 0x34d399, transparent: true, opacity: 0, blending: THREE.AdditiveBlending
+    });
+    this.centralBeam = new THREE.Mesh(beamGeo, beamMat);
+    this.centralBeam.position.set(0, 0, 2);
+    scene.add(this.centralBeam);
+    this.objects.push(this.centralBeam);
+
+    // Heal particles
+    this.healGeo = new THREE.BufferGeometry();
+    this.maxHeal = 200;
+    this.healPositions = new Float32Array(this.maxHeal * 3);
+    this.healVels = [];
+    for (let i = 0; i < this.maxHeal; i++) {
+      this.healVels.push(new THREE.Vector3(0, 0, 0));
+    }
+    this.healGeo.setAttribute('position', new THREE.BufferAttribute(this.healPositions, 3));
+    const healMat = new THREE.PointsMaterial({
+      color: 0x6ee7b7, size: 0.08, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, sizeAttenuation: true
+    });
+    this.healParts = new THREE.Points(this.healGeo, healMat);
+    scene.add(this.healParts);
+    this.objects.push(this.healParts);
+    this.particleSpawnIdx = 0;
+
+    // Light
+    this.healLight = new THREE.PointLight(0x34d399, 0, 12);
+    this.healLight.position.set(0, 2, 2);
+    scene.add(this.healLight);
+    this.objects.push(this.healLight);
+  }
+  update(dt, t) {
+    this.time += dt;
+    const dur = 4;
+    const appear = Math.min(1, this.time / 0.8);
+    const fade = this.time > dur - 1 ? Math.max(0, (dur - this.time)) : 1;
+    const a = appear * fade;
+
+    // Rotate rings
+    this.ring.rotation.z = t * 0.5;
+    this.ring.material.opacity = a * 0.7;
+    this.ring2.rotation.z = -t * 0.8;
+    this.ring2.material.opacity = a * 0.5;
+
+    // Scale rings up
+    const rs = Math.min(1, this.time / 0.5);
+    this.ring.scale.set(rs, rs, rs);
+    this.ring2.scale.set(rs, rs, rs);
+
+    // Rune beams
+    for (let i = 0; i < this.runeBeams.length; i++) {
+      const b = this.runeBeams[i];
+      const rotA = b.userData.angle + t * 0.5;
+      b.position.x = Math.cos(rotA) * 2;
+      b.position.z = 2 + Math.sin(rotA) * 2;
+      const h = appear * 4 * fade;
+      b.geometry.dispose();
+      b.geometry = new THREE.CylinderGeometry(0.03, 0.03, h, 6);
+      b.position.y = h / 2;
+      b.material.opacity = a * (0.4 + Math.sin(t * 3 + i) * 0.3);
+    }
+
+    // Central beam
+    if (this.time > 0.5) {
+      const bp = Math.min(1, (this.time - 0.5) / 0.5) * fade;
+      const h = bp * 12;
+      this.centralBeam.geometry.dispose();
+      this.centralBeam.geometry = new THREE.CylinderGeometry(0.1 * bp, 0.25 * bp, h, 8);
+      this.centralBeam.position.y = h / 2;
+      this.centralBeam.material.opacity = bp * 0.4;
+    }
+
+    // Particles rising
+    if (this.time > 0.3 && this.time < dur - 0.5) {
+      const idx = this.particleSpawnIdx % this.maxHeal;
+      const ra = Math.random() * Math.PI * 2;
+      const rd = Math.random() * 1.5;
+      this.healPositions[idx*3] = Math.cos(ra) * rd;
+      this.healPositions[idx*3+1] = 0;
+      this.healPositions[idx*3+2] = 2 + Math.sin(ra) * rd;
+      this.healVels[idx].set((Math.random()-.5)*0.3, 1 + Math.random()*2, (Math.random()-.5)*0.3);
+      this.particleSpawnIdx++;
+    }
+    for (let i = 0; i < Math.min(this.particleSpawnIdx, this.maxHeal); i++) {
+      this.healPositions[i*3] += this.healVels[i].x * dt;
+      this.healPositions[i*3+1] += this.healVels[i].y * dt;
+      this.healPositions[i*3+2] += this.healVels[i].z * dt;
+    }
+    this.healGeo.attributes.position.needsUpdate = true;
+    this.healGeo.setDrawRange(0, Math.min(this.particleSpawnIdx, this.maxHeal));
+    this.healParts.material.opacity = a * 0.6;
+
+    this.healLight.intensity = a * 5;
+    bloom.strength = 1.2 + a * 0.5;
+
+    if (this.time > dur) { this.done = true; bloom.strength = 1.2; }
+  }
+}
+
+// =================== CAST ===================
+let cameraShake = 0;
+
+window.castSpell = function(type) {
+  // Clear previous
+  activeSpells.forEach(s => s.dispose());
+  activeSpells = [];
+
+  if (type === 'fire') activeSpells.push(new FireballSpell());
+  else if (type === 'ice') activeSpells.push(new IceSpell());
+  else if (type === 'lightning') activeSpells.push(new LightningSpell());
+  else if (type === 'heal') activeSpells.push(new HealSpell());
+};
+
+// =================== LOOP ===================
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  // Floating orbs animation
+  const oPos = orbs.geometry.attributes.position.array;
+  for (let i = 0; i < orbCount; i++) {
+    oPos[i*3+1] += 0.003;
+    oPos[i*3] += Math.sin(t * 0.3 + i) * 0.001;
+    if (oPos[i*3+1] > 15) oPos[i*3+1] = 0;
+  }
+  orbs.geometry.attributes.position.needsUpdate = true;
+
+  // Crystal rotation
+  crystal.rotation.y = t * 0.5;
+  crystal.position.y = 2 + Math.sin(t) * 0.3;
+  innerGlow.intensity = 1.5 + Math.sin(t * 2) * 0.5;
+
+  // Update spells
+  activeSpells = activeSpells.filter(s => {
+    s.update(dt, t);
+    if (s.done) { s.dispose(); return false; }
+    return true;
+  });
+
+  // Camera shake
+  if (cameraShake > 0) {
+    camera.position.x = Math.sin(t * 50) * cameraShake * 0.3;
+    camera.position.y = 4 + Math.cos(t * 60) * cameraShake * 0.2;
+    cameraShake *= 0.95;
+    if (cameraShake < 0.01) { cameraShake = 0; camera.position.set(0, 4, 12); }
+  }
+
+  composer.render();
+}
+
+animate();
+</script>
+</body>
+</html>

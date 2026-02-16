@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+:root {
+  --bg-primary: #06030f;
+  --bg-secondary: #0f0a1a;
+  --bg-card: #1a1025;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --accent-fire: #f97316;
+  --accent-ice: #38bdf8;
+  --accent-lightning: #facc15;
+  --accent-heal: #34d399;
+  --accent-void: #a855f7;
+  --accent-arcane: #c084fc;
+  --border: #2d2040;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Noto Sans KR', sans-serif;
+}

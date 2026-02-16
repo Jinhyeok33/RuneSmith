@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RuneSmith — Pixi.js 고성능 2D 마법 데모</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Noto+Sans+KR:wght@400;700&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{overflow:hidden;background:#000;font-family:'Noto Sans KR',sans-serif;color:#e8e0f0}
+  canvas{display:block}
+  .ui{position:fixed;bottom:0;left:0;right:0;z-index:10;padding:20px 30px;display:flex;flex-direction:column;gap:12px;pointer-events:none}
+  .title-bar{text-align:center}
+  .title-bar h1{font-family:'Cinzel Decorative',serif;font-size:14px;letter-spacing:4px;color:#c084fc;text-transform:uppercase;margin-bottom:4px;text-shadow:0 0 20px rgba(192,132,252,0.5)}
+  .title-bar p{font-size:11px;color:#7c6fa0;letter-spacing:1px}
+  .spells{display:flex;gap:14px;justify-content:center;pointer-events:auto}
+  .spell{
+    width:150px;padding:16px 10px 12px;
+    border:1px solid rgba(120,80,200,0.25);border-radius:14px;
+    background:rgba(20,10,45,0.6);backdrop-filter:blur(16px);
+    cursor:pointer;text-align:center;transition:all .25s cubic-bezier(.22,1,.36,1);
+    user-select:none;position:relative;overflow:hidden;
+  }
+  .spell::before{content:'';position:absolute;inset:0;border-radius:14px;opacity:0;transition:opacity .3s}
+  .spell:hover::before{opacity:1}
+  .spell:hover{transform:translateY(-5px);border-color:rgba(255,255,255,0.18)}
+  .spell:active{transform:translateY(-1px) scale(.97)}
+  .spell.fire::before{background:radial-gradient(ellipse at 50% 80%,rgba(249,115,22,0.5),transparent 70%)}
+  .spell.ice::before{background:radial-gradient(ellipse at 50% 80%,rgba(56,189,248,0.5),transparent 70%)}
+  .spell.lightning::before{background:radial-gradient(ellipse at 50% 80%,rgba(250,204,21,0.5),transparent 70%)}
+  .spell.heal::before{background:radial-gradient(ellipse at 50% 80%,rgba(52,211,153,0.5),transparent 70%)}
+  .sp-icon{font-size:30px;display:block;margin-bottom:4px}
+  .sp-name{font-family:'Cinzel Decorative',serif;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+  .spell.fire .sp-name{color:#f97316}
+  .spell.ice .sp-name{color:#38bdf8}
+  .spell.lightning .sp-name{color:#facc15}
+  .spell.heal .sp-name{color:#34d399}
+  .sp-desc{font-size:8px;color:#5a4e70;margin-top:3px}
+  .label{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:10;
+    font-family:'Cinzel Decorative',serif;font-size:13px;letter-spacing:3px;color:#c084fc;
+    background:rgba(10,5,20,0.7);padding:8px 24px;border-radius:20px;border:1px solid rgba(192,132,252,0.2);
+    backdrop-filter:blur(10px);text-transform:uppercase}
+  .counter{position:fixed;top:20px;right:20px;z-index:10;font-size:11px;color:#5a4e70;
+    background:rgba(10,5,20,0.7);padding:6px 14px;border-radius:12px;border:1px solid rgba(90,78,112,0.2);font-variant-numeric:tabular-nums}
+  @media(max-width:700px){
+    .spell{width:80px;padding:10px 5px 8px}
+    .sp-icon{font-size:22px}
+    .sp-name{font-size:8px}
+    .sp-desc{display:none}
+    .ui{padding:12px 10px}
+  }
+</style>
+</head>
+<body>
+<div class="label">Pixi.js — 고성능 2D 파티클 이펙트</div>
+<div class="counter" id="counter">파티클: 0</div>
+<div class="ui">
+  <div class="title-bar">
+    <h1>2D Particle Showcase</h1>
+    <p>각 마법 버튼을 클릭하세요 — 수천 개의 파티클이 60fps로 동작합니다</p>
+  </div>
+  <div class="spells">
+    <div class="spell fire" onclick="castSpell('fire')"><span class="sp-icon">&#x1F525;</span><span class="sp-name">화염구</span><span class="sp-desc">2000+ 파티클 폭발</span></div>
+    <div class="spell ice" onclick="castSpell('ice')"><span class="sp-icon">&#x2744;&#xFE0F;</span><span class="sp-name">빙결</span><span class="sp-desc">결정화 + 파쇄</span></div>
+    <div class="spell lightning" onclick="castSpell('lightning')"><span class="sp-icon">&#x26A1;</span><span class="sp-name">낙뢰</span><span class="sp-desc">전기 체인 + 스파크</span></div>
+    <div class="spell heal" onclick="castSpell('heal')"><span class="sp-icon">&#x2728;</span><span class="sp-name">치유진</span><span class="sp-desc">룬 회전 + 상승 파티클</span></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@7.3.2/dist/pixi.min.js"></script>
+<script>
+const W = window.innerWidth, H = window.innerHeight;
+const app = new PIXI.Application({
+  width: W, height: H,
+  backgroundColor: 0x06030f,
+  antialias: true,
+  resolution: Math.min(devicePixelRatio, 2),
+  autoDensity: true
+});
+document.body.insertBefore(app.view, document.body.firstChild);
+
+window.addEventListener('resize', () => {
+  app.renderer.resize(window.innerWidth, window.innerHeight);
+});
+
+// ==================== LAYERS ====================
+const bgLayer = new PIXI.Container();
+const mainLayer = new PIXI.Container();
+const fxLayer = new PIXI.Container();
+const glowLayer = new PIXI.Container();
+app.stage.addChild(bgLayer, mainLayer, fxLayer, glowLayer);
+
+// ==================== TEXTURES (procedural) ====================
+function makeCircleTexture(radius, color) {
+  const g = new PIXI.Graphics();
+  g.beginFill(color);
+  g.drawCircle(0, 0, radius);
+  g.endFill();
+  return app.renderer.generateTexture(g);
+}
+
+function makeGlowTexture(radius, color) {
+  const c = document.createElement('canvas');
+  c.width = c.height = radius * 4;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createRadialGradient(radius*2, radius*2, 0, radius*2, radius*2, radius*2);
+  const r = (color >> 16) & 0xff, g2 = (color >> 8) & 0xff, b = color & 0xff;
+  grad.addColorStop(0, `rgba(${r},${g2},${b},1)`);
+  grad.addColorStop(0.3, `rgba(${r},${g2},${b},0.4)`);
+  grad.addColorStop(1, `rgba(${r},${g2},${b},0)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, c.width, c.height);
+  return PIXI.Texture.from(c);
+}
+
+function makeShardTexture(w, h, color) {
+  const g = new PIXI.Graphics();
+  g.beginFill(color);
+  g.moveTo(0, -h/2); g.lineTo(w/2, 0); g.lineTo(0, h/2); g.lineTo(-w/2, 0);
+  g.closePath(); g.endFill();
+  return app.renderer.generateTexture(g);
+}
+
+function makeRuneTexture(char, size, color) {
+  const t = new PIXI.Text(char, {
+    fontFamily: 'serif', fontSize: size,
+    fill: color, align: 'center'
+  });
+  return app.renderer.generateTexture(t);
+}
+
+const circleSmall = makeCircleTexture(4, 0xffffff);
+const circleMed = makeCircleTexture(8, 0xffffff);
+const glowFire = makeGlowTexture(32, 0xf97316);
+const glowIce = makeGlowTexture(32, 0x38bdf8);
+const glowLit = makeGlowTexture(32, 0xfacc15);
+const glowHeal = makeGlowTexture(32, 0x34d399);
+const glowWhite = makeGlowTexture(48, 0xffffff);
+const shardTex = makeShardTexture(8, 20, 0xbae6fd);
+const sparkTex = makeShardTexture(4, 12, 0xfacc15);
+
+// ==================== BACKGROUND ====================
+// Atmospheric orbs
+const bgOrbs = [];
+for (let i = 0; i < 80; i++) {
+  const s = new PIXI.Sprite(makeGlowTexture(8 + Math.random() * 12, [0x8b5cf6, 0x6d28d9, 0xc084fc, 0x581c87][Math.floor(Math.random()*4)]));
+  s.anchor.set(0.5);
+  s.x = Math.random() * W; s.y = Math.random() * H;
+  s.alpha = 0.05 + Math.random() * 0.15;
+  s.blendMode = PIXI.BLEND_MODES.ADD;
+  s.userData = { spd: 0.1 + Math.random() * 0.3, drift: (Math.random() - 0.5) * 0.2, phase: Math.random() * 6.28 };
+  bgLayer.addChild(s);
+  bgOrbs.push(s);
+}
+
+// Ground gradient
+const groundGfx = new PIXI.Graphics();
+bgLayer.addChild(groundGfx);
+function drawGround() {
+  groundGfx.clear();
+  const gy = H * 0.7;
+  for (let i = 0; i < 60; i++) {
+    const a = (i / 60) * 0.5;
+    groundGfx.beginFill(0x0a0618, a);
+    groundGfx.drawRect(0, gy + i * (H * 0.3 / 60), W, H * 0.3 / 60);
+    groundGfx.endFill();
+  }
+  // Horizon line
+  groundGfx.lineStyle(1, 0x8b5cf6, 0.1);
+  groundGfx.moveTo(W * 0.05, gy);
+  groundGfx.lineTo(W * 0.95, gy);
+}
+drawGround();
+
+// ==================== TARGET (Dragon silhouette placeholder) ====================
+const targetX = W * 0.55, targetY = H * 0.38;
+const targetGfx = new PIXI.Graphics();
+// Simple imposing silhouette
+targetGfx.beginFill(0x1a0f30); targetGfx.lineStyle(2, 0x581c87, 0.6);
+// Body
+targetGfx.drawEllipse(0, 0, 50, 65);
+// Head
+targetGfx.drawEllipse(0, -80, 30, 22);
+targetGfx.endFill();
+// Eyes
+targetGfx.beginFill(0xef4444);
+targetGfx.drawCircle(-10, -82, 4);
+targetGfx.drawCircle(10, -82, 4);
+targetGfx.endFill();
+// Horns
+targetGfx.lineStyle(3, 0xa78bfa, 0.7);
+targetGfx.moveTo(-18, -96); targetGfx.quadraticCurveTo(-28, -120, -16, -125);
+targetGfx.moveTo(18, -96); targetGfx.quadraticCurveTo(28, -120, 16, -125);
+targetGfx.position.set(targetX, targetY);
+mainLayer.addChild(targetGfx);
+
+// Target glow
+const targetGlow = new PIXI.Sprite(makeGlowTexture(80, 0x6d28d9));
+targetGlow.anchor.set(0.5); targetGlow.position.set(targetX, targetY);
+targetGlow.alpha = 0.3; targetGlow.blendMode = PIXI.BLEND_MODES.ADD;
+mainLayer.addChild(targetGlow);
+
+// ==================== PARTICLE POOL ====================
+// Pixi.js advantage: we can handle thousands of particles at 60fps via ParticleContainer
+const MAX_PARTICLES = 5000;
+const particleContainer = new PIXI.ParticleContainer(MAX_PARTICLES, {
+  position: true, scale: true, rotation: true, tint: true, uvs: false
+});
+particleContainer.blendMode = PIXI.BLEND_MODES.ADD;
+fxLayer.addChild(particleContainer);
+
+// Glow layer (separate for bigger glows)
+const glowContainer = new PIXI.ParticleContainer(500, {
+  position: true, scale: true, rotation: true, tint: true, uvs: false
+});
+glowContainer.blendMode = PIXI.BLEND_MODES.ADD;
+glowLayer.addChild(glowContainer);
+
+const pool = [];
+const active = [];
+const glowActive = [];
+
+function getParticle(tex) {
+  let p;
+  if (pool.length > 0) {
+    p = pool.pop();
+    p.texture = tex;
+  } else {
+    p = new PIXI.Sprite(tex);
+    p.anchor.set(0.5);
+  }
+  p.visible = true;
+  p.alpha = 1;
+  p.scale.set(1);
+  p.rotation = 0;
+  p.tint = 0xffffff;
+  return p;
+}
+
+function spawnParticle(x, y, vx, vy, life, tex, opts) {
+  opts = opts || {};
+  const p = getParticle(tex);
+  p.x = x; p.y = y;
+  p._vx = vx; p._vy = vy;
+  p._life = p._maxLife = life;
+  p._grav = opts.grav || 0;
+  p._fric = opts.fric || 0.98;
+  p._rotSpd = opts.rotSpd || (Math.random() - 0.5) * 0.1;
+  p._startScale = opts.scale || 1;
+  p._fadeMode = opts.fadeMode || 'linear'; // 'linear' or 'late'
+  p.scale.set(p._startScale);
+  if (opts.tint) p.tint = opts.tint;
+  if (opts.rotation !== undefined) p.rotation = opts.rotation;
+
+  if (opts.isGlow) {
+    glowContainer.addChild(p);
+    glowActive.push(p);
+  } else {
+    particleContainer.addChild(p);
+    active.push(p);
+  }
+  return p;
+}
+
+function retireParticle(p, arr) {
+  p.visible = false;
+  if (p.parent) p.parent.removeChild(p);
+  pool.push(p);
+}
+
+// ==================== EXTRA GFX LAYER ====================
+const extraGfx = new PIXI.Graphics();
+fxLayer.addChild(extraGfx);
+
+// ==================== SPELL ANIMATIONS ====================
+let currentSpell = null;
+let spellTime = 0;
+let screenShake = 0;
+let flashAlpha = 0;
+let flashColor = 0xffffff;
+
+const flashGfx = new PIXI.Graphics();
+app.stage.addChild(flashGfx);
+
+// Origin (wizard position)
+const originX = W * 0.2, originY = H * 0.6;
+
+// ---- FIREBALL ----
+function spellFire(dt, t) {
+  const dur = 3;
+  spellTime += dt;
+
+  if (spellTime < 1.2) {
+    // Projectile phase
+    const p = spellTime / 1.2;
+    const ep = p * p * (3 - 2 * p);
+    const bx = originX + (targetX - originX) * ep;
+    const by = originY + (targetY - originY) * ep - Math.sin(p * Math.PI) * 120;
+
+    // Heavy fire trail - THIS is why Pixi is powerful: spawn tons of particles
+    for (let i = 0; i < 15; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = 0.5 + Math.random() * 2;
+      spawnParticle(
+        bx + (Math.random() - 0.5) * 20,
+        by + (Math.random() - 0.5) * 20,
+        Math.cos(a) * spd + (Math.random() - 0.5),
+        Math.sin(a) * spd + 1,
+        30 + Math.random() * 30, circleMed,
+        { tint: [0xf97316, 0xfb923c, 0xfbbf24, 0xef4444, 0xfef3c7][Math.floor(Math.random()*5)],
+          scale: 0.3 + Math.random() * 0.5, grav: -0.02, fric: 0.96 }
+      );
+    }
+    // Core glow
+    spawnParticle(bx, by, 0, 0, 5, glowFire,
+      { scale: 2 + Math.sin(t * 20) * 0.5, isGlow: true });
+    spawnParticle(bx, by, 0, 0, 5, glowWhite,
+      { scale: 0.8, isGlow: true });
+  }
+  else if (spellTime >= 1.2 && spellTime < 1.25) {
+    // IMPACT - massive explosion
+    screenShake = 12;
+    flashAlpha = 0.6; flashColor = 0xf97316;
+
+    // Explosion ring
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2;
+      const spd = 4 + Math.random() * 3;
+      spawnParticle(targetX, targetY,
+        Math.cos(a) * spd, Math.sin(a) * spd * 0.6,
+        30 + Math.random() * 20, circleMed,
+        { tint: 0xf97316, scale: 0.4 + Math.random() * 0.3, fric: 0.95 });
+    }
+
+    // Massive particle burst
+    for (let i = 0; i < 200; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = 1 + Math.random() * 8;
+      spawnParticle(
+        targetX + (Math.random()-.5) * 30,
+        targetY + (Math.random()-.5) * 30,
+        Math.cos(a) * spd, Math.sin(a) * spd,
+        20 + Math.random() * 40, circleSmall,
+        { tint: [0xf97316, 0xfbbf24, 0xef4444, 0xdc2626, 0xfef3c7][Math.floor(Math.random()*5)],
+          scale: 0.3 + Math.random() * 0.8, grav: 0.05, fric: 0.97 }
+      );
+    }
+
+    // Embers rising
+    for (let i = 0; i < 80; i++) {
+      spawnParticle(
+        targetX + (Math.random()-.5) * 100,
+        targetY + Math.random() * 40,
+        (Math.random()-.5) * 1.5, -1 - Math.random() * 3,
+        50 + Math.random() * 40, circleSmall,
+        { tint: 0xfbbf24, scale: 0.2 + Math.random() * 0.3, grav: -0.03, fric: 0.99 }
+      );
+    }
+
+    // Big glow
+    spawnParticle(targetX, targetY, 0, 0, 30, glowFire, { scale: 8, isGlow: true });
+    spawnParticle(targetX, targetY, 0, 0, 15, glowWhite, { scale: 4, isGlow: true });
+  }
+  else if (spellTime < dur) {
+    // Aftermath embers
+    if (Math.random() > 0.7) {
+      spawnParticle(
+        targetX + (Math.random()-.5) * 80,
+        targetY + 20 + Math.random() * 30,
+        (Math.random()-.5) * 0.5, -0.5 - Math.random(),
+        40 + Math.random() * 20, circleSmall,
+        { tint: 0xf97316, scale: 0.15 + Math.random() * 0.2, grav: -0.02, fric: 0.99 }
+      );
+    }
+  }
+  else { currentSpell = null; }
+}
+
+// ---- ICE ----
+let iceShards = [];
+function spellIce(dt, t) {
+  const dur = 3.5;
+  spellTime += dt;
+
+  if (spellTime < 0.8) {
+    // Ice lance flight
+    const p = spellTime / 0.8;
+    const ep = p < 0.5 ? 2*p*p : 1 - Math.pow(-2*p+2,2)/2;
+    const bx = originX + (targetX - originX) * ep;
+    const by = originY + (targetY - originY) * ep;
+
+    // Frost trail
+    for (let i = 0; i < 8; i++) {
+      spawnParticle(
+        bx + (Math.random()-.5) * 15,
+        by + (Math.random()-.5) * 15,
+        (Math.random()-.5) * 0.5, (Math.random()-.5) * 0.5,
+        25 + Math.random() * 15, circleSmall,
+        { tint: [0xbae6fd, 0xe0f2fe, 0xffffff][Math.floor(Math.random()*3)],
+          scale: 0.2 + Math.random() * 0.3, fric: 0.97 }
+      );
+    }
+    // Glow
+    spawnParticle(bx, by, 0, 0, 4, glowIce, { scale: 1.5, isGlow: true });
+
+    // Draw lance shape in extraGfx
+    extraGfx.clear();
+    const angle = Math.atan2(targetY - originY, targetX - originX);
+    extraGfx.lineStyle(0);
+    extraGfx.beginFill(0x38bdf8, 0.7);
+    const len = 40, w = 10;
+    extraGfx.save;
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    extraGfx.moveTo(bx + cos * len, by + sin * len);
+    extraGfx.lineTo(bx + cos * len * 0.2 - sin * w, by + sin * len * 0.2 + cos * w);
+    extraGfx.lineTo(bx - cos * len * 0.5, by - sin * len * 0.5);
+    extraGfx.lineTo(bx + cos * len * 0.2 + sin * w, by + sin * len * 0.2 - cos * w);
+    extraGfx.closePath();
+    extraGfx.endFill();
+    // Highlight
+    extraGfx.beginFill(0xe0f2fe, 0.4);
+    extraGfx.moveTo(bx + cos * len * 0.8, by + sin * len * 0.8);
+    extraGfx.lineTo(bx + cos * len * 0.1 - sin * w * 0.5, by + sin * len * 0.1 + cos * w * 0.5);
+    extraGfx.lineTo(bx - cos * len * 0.2, by - sin * len * 0.2);
+    extraGfx.closePath();
+    extraGfx.endFill();
+  }
+  else if (spellTime >= 0.8 && spellTime < 0.85) {
+    extraGfx.clear();
+    screenShake = 6;
+    flashAlpha = 0.4; flashColor = 0x38bdf8;
+
+    // Shatter burst
+    for (let i = 0; i < 120; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = 1 + Math.random() * 7;
+      const tex = Math.random() > 0.4 ? circleSmall : shardTex;
+      spawnParticle(
+        targetX + (Math.random()-.5) * 20,
+        targetY + (Math.random()-.5) * 20,
+        Math.cos(a) * spd, Math.sin(a) * spd,
+        30 + Math.random() * 30, tex,
+        { tint: [0x38bdf8, 0x7dd3fc, 0xbae6fd, 0xe0f2fe, 0xffffff][Math.floor(Math.random()*5)],
+          scale: 0.3 + Math.random() * 0.6, grav: 0.04, fric: 0.95,
+          rotSpd: (Math.random()-.5) * 0.3 }
+      );
+    }
+
+    // Frost cloud (big soft particles)
+    for (let i = 0; i < 30; i++) {
+      spawnParticle(
+        targetX + (Math.random()-.5) * 100,
+        targetY + (Math.random()-.5) * 60,
+        (Math.random()-.5) * 0.3, (Math.random()-.5) * 0.3,
+        40 + Math.random() * 30, glowIce,
+        { scale: 1 + Math.random() * 2, isGlow: true, fric: 0.995 }
+      );
+    }
+
+    // Ground crystals (store for drawing)
+    iceShards = [];
+    for (let i = 0; i < 12; i++) {
+      iceShards.push({
+        x: targetX + (Math.random() - 0.5) * 160,
+        y: targetY + 40 + Math.random() * 30,
+        h: 20 + Math.random() * 50,
+        w: 3 + Math.random() * 6,
+        angle: -0.3 + Math.random() * 0.6,
+        life: 80
+      });
+    }
+
+    spawnParticle(targetX, targetY, 0, 0, 25, glowIce, { scale: 6, isGlow: true });
+  }
+  else if (spellTime < dur) {
+    // Draw ground crystals
+    extraGfx.clear();
+    for (const s of iceShards) {
+      s.life--;
+      const a = Math.max(0, s.life / 80);
+      extraGfx.beginFill(0xbae6fd, a * 0.6);
+      extraGfx.lineStyle(1, 0x7dd3fc, a * 0.4);
+      const h = s.h * Math.min(1, (80 - s.life + 10) / 10) * a;
+      extraGfx.save;
+      const cx = s.x, cy = s.y;
+      extraGfx.moveTo(cx, cy);
+      extraGfx.lineTo(cx - s.w * Math.cos(s.angle), cy);
+      extraGfx.lineTo(cx - s.w * 0.2 * Math.cos(s.angle) + Math.sin(s.angle) * 3, cy - h);
+      extraGfx.lineTo(cx + s.w * Math.cos(s.angle), cy);
+      extraGfx.closePath();
+      extraGfx.endFill();
+    }
+    iceShards = iceShards.filter(s => s.life > 0);
+  }
+  else { currentSpell = null; extraGfx.clear(); }
+}
+
+// ---- LIGHTNING ----
+let boltSegments = [];
+let boltLife = 0;
+function generateBolt(x1, y1, x2, y2, depth) {
+  if (depth <= 0) return [{ x1, y1, x2, y2 }];
+  const segs = [];
+  const mx = (x1+x2)/2 + (Math.random()-.5) * (Math.abs(x2-x1)+Math.abs(y2-y1)) * 0.25;
+  const my = (y1+y2)/2 + (Math.random()-.5) * 15;
+  segs.push(...generateBolt(x1, y1, mx, my, depth-1));
+  segs.push(...generateBolt(mx, my, x2, y2, depth-1));
+  if (depth > 1 && Math.random() > 0.5) {
+    const bx = mx + (Math.random()-.5)*80, by = my + 20 + Math.random()*50;
+    segs.push(...generateBolt(mx, my, bx, by, depth-2));
+  }
+  return segs;
+}
+
+function spellLightning(dt, t) {
+  const dur = 3;
+  spellTime += dt;
+
+  if (spellTime < 1) {
+    // Charge phase
+    const cp = spellTime / 1;
+    // Converging sparks
+    for (let i = 0; i < 5; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const dist = (1 - cp) * 120 + 20;
+      spawnParticle(
+        targetX + Math.cos(a) * dist,
+        targetY + Math.sin(a) * dist * 0.5,
+        -Math.cos(a) * 2, -Math.sin(a),
+        15 + Math.random() * 10, circleSmall,
+        { tint: 0xfacc15, scale: 0.2 + Math.random() * 0.3, fric: 0.95 }
+      );
+    }
+    // Warning circle
+    extraGfx.clear();
+    extraGfx.lineStyle(2, 0xfacc15, cp * 0.3);
+    extraGfx.drawEllipse(targetX, targetY + 30, 50 * cp, 15 * cp);
+  }
+  else if (spellTime >= 1 && spellTime < 1.05) {
+    // STRIKE
+    extraGfx.clear();
+    screenShake = 15;
+    flashAlpha = 0.8; flashColor = 0xfacc15;
+
+    boltSegments = generateBolt(targetX + (Math.random()-.5)*40, -20, targetX, targetY, 6);
+    boltLife = 40;
+
+    // Impact sparks — massive amount, this is Pixi's strength
+    for (let i = 0; i < 300; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const spd = 1 + Math.random() * 12;
+      spawnParticle(
+        targetX + (Math.random()-.5) * 10,
+        targetY + (Math.random()-.5) * 10,
+        Math.cos(a) * spd, Math.sin(a) * spd,
+        10 + Math.random() * 25, Math.random() > 0.5 ? sparkTex : circleSmall,
+        { tint: [0xfacc15, 0xfef08a, 0xffffff, 0xfde047][Math.floor(Math.random()*4)],
+          scale: 0.2 + Math.random() * 0.5, fric: 0.9, rotSpd: (Math.random()-.5) * 0.5 }
+      );
+    }
+
+    // Ground electric arcs
+    for (let i = 0; i < 20; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = 20 + Math.random() * 60;
+      spawnParticle(
+        targetX + Math.cos(a) * d,
+        targetY + Math.sin(a) * d * 0.3 + 25,
+        Math.cos(a) * 0.5, -0.3,
+        12 + Math.random() * 8, sparkTex,
+        { tint: 0xfacc15, scale: 0.3 + Math.random() * 0.3, fric: 0.95, rotSpd: Math.random() * 0.5 }
+      );
+    }
+
+    spawnParticle(targetX, targetY, 0, 0, 15, glowWhite, { scale: 6, isGlow: true });
+    spawnParticle(targetX, targetY, 0, 0, 25, glowLit, { scale: 8, isGlow: true });
+  }
+  else if (spellTime < dur) {
+    // Draw bolt
+    if (boltLife > 0) {
+      boltLife--;
+      // Flicker: regenerate sometimes
+      if (boltLife > 20 && boltLife % 3 === 0) {
+        boltSegments = generateBolt(targetX + (Math.random()-.5)*40, -20, targetX, targetY, 5);
+      }
+      const ba = boltLife / 40;
+      extraGfx.clear();
+      // Thick glow
+      extraGfx.lineStyle(8, 0xfacc15, ba * 0.3);
+      for (const seg of boltSegments) {
+        extraGfx.moveTo(seg.x1, seg.y1); extraGfx.lineTo(seg.x2, seg.y2);
+      }
+      // Medium
+      extraGfx.lineStyle(3, 0xfef08a, ba * 0.6);
+      for (const seg of boltSegments) {
+        extraGfx.moveTo(seg.x1, seg.y1); extraGfx.lineTo(seg.x2, seg.y2);
+      }
+      // Core
+      extraGfx.lineStyle(1.5, 0xffffff, ba);
+      for (const seg of boltSegments) {
+        extraGfx.moveTo(seg.x1, seg.y1); extraGfx.lineTo(seg.x2, seg.y2);
+      }
+    } else {
+      extraGfx.clear();
+    }
+  }
+  else { currentSpell = null; extraGfx.clear(); }
+}
+
+// ---- HEAL ----
+const runeChars = ['\u16A0','\u16B1','\u16C1','\u16DA','\u16EB','\u16D2','\u16A2','\u16B7'];
+function spellHeal(dt, t) {
+  const dur = 4;
+  spellTime += dt;
+  const appear = Math.min(1, spellTime / 0.8);
+  const fade = spellTime > dur - 1 ? Math.max(0, dur - spellTime) : 1;
+  const a = appear * fade;
+
+  const cx = originX, cy = originY + 20;
+
+  extraGfx.clear();
+
+  // Outer ring
+  extraGfx.lineStyle(2, 0x34d399, a * 0.7);
+  extraGfx.drawEllipse(cx, cy, 70 * appear, 22 * appear);
+  // Inner ring
+  extraGfx.lineStyle(1.5, 0x6ee7b7, a * 0.5);
+  extraGfx.drawEllipse(cx, cy, 45 * appear, 14 * appear);
+
+  // Rotating rune positions (drawn as text via Graphics is limited, use particles)
+  for (let i = 0; i < 8; i++) {
+    const ra = (i / 8) * Math.PI * 2 + t * 1.2;
+    const rx = cx + Math.cos(ra) * 70 * appear;
+    const ry = cy + Math.sin(ra) * 22 * appear;
+    // Rune glow dots
+    if (spellTime % 0.1 < dt) {
+      spawnParticle(rx, ry - 3, 0, -0.3, 20, circleSmall,
+        { tint: 0x6ee7b7, scale: 0.3 + Math.sin(t * 3 + i) * 0.15 });
+    }
+  }
+
+  // Pentagram
+  extraGfx.lineStyle(1, 0x34d399, a * 0.4);
+  for (let i = 0; i < 5; i++) {
+    const sa = (i / 5) * Math.PI * 2 - Math.PI / 2 + t * 0.6;
+    const na = ((i + 2) % 5 / 5) * Math.PI * 2 - Math.PI / 2 + t * 0.6;
+    extraGfx.moveTo(cx + Math.cos(sa) * 30 * appear, cy + Math.sin(sa) * 10 * appear);
+    extraGfx.lineTo(cx + Math.cos(na) * 30 * appear, cy + Math.sin(na) * 10 * appear);
+  }
+
+  // Vertical beam
+  if (spellTime > 0.5 && spellTime < dur - 0.5) {
+    const bp = Math.min(1, (spellTime - 0.5) / 0.5) * fade;
+    extraGfx.beginFill(0x34d399, bp * 0.15);
+    extraGfx.drawRect(cx - 12, cy - 250, 24, 250);
+    extraGfx.endFill();
+    // Beam glow
+    spawnParticle(cx, cy - Math.random() * 200, 0, -1, 10, glowHeal,
+      { scale: 0.5 + Math.random() * 0.5, isGlow: true });
+  }
+
+  // Rising heal particles
+  if (spellTime > 0.3 && spellTime < dur - 0.3 && Math.random() > 0.3) {
+    const ra = Math.random() * Math.PI * 2;
+    const rd = Math.random() * 50;
+    spawnParticle(
+      cx + Math.cos(ra) * rd,
+      cy + Math.sin(ra) * rd * 0.3,
+      (Math.random()-.5) * 0.5, -1 - Math.random() * 2,
+      35 + Math.random() * 25, circleSmall,
+      { tint: [0x34d399, 0x6ee7b7, 0xa7f3d0, 0xd1fae5, 0xffffff][Math.floor(Math.random()*5)],
+        scale: 0.2 + Math.random() * 0.3, grav: -0.02, fric: 0.98 }
+    );
+  }
+
+  // Light pulse
+  if (spellTime % 0.5 < dt && spellTime < dur - 0.5) {
+    spawnParticle(cx, cy, 0, 0, 15, glowHeal, { scale: 3 * a, isGlow: true });
+  }
+
+  if (spellTime >= dur) { currentSpell = null; extraGfx.clear(); }
+}
+
+// ==================== CAST ====================
+window.castSpell = function(type) {
+  // Clear previous
+  currentSpell = type;
+  spellTime = 0;
+  boltSegments = [];
+  iceShards = [];
+  extraGfx.clear();
+};
+
+// ==================== MAIN LOOP ====================
+let lastT = 0;
+app.ticker.add((delta) => {
+  const dt = delta / 60;
+  const t = performance.now() / 1000;
+
+  // Background orbs
+  for (const o of bgOrbs) {
+    o.y -= o.userData.spd;
+    o.x += o.userData.drift + Math.sin(t * 0.5 + o.userData.phase) * 0.15;
+    if (o.y < -20) { o.y = H + 20; o.x = Math.random() * W; }
+    if (o.x < -20) o.x = W + 20;
+    if (o.x > W + 20) o.x = -20;
+    o.alpha = o.userData.spd * 0.3 * (0.7 + 0.3 * Math.sin(t + o.userData.phase));
+  }
+
+  // Target bob
+  targetGfx.y = targetY + Math.sin(t * 1.5) * 5;
+  targetGlow.y = targetGfx.y;
+  targetGlow.alpha = 0.2 + Math.sin(t * 2) * 0.1;
+
+  // Update spell
+  if (currentSpell === 'fire') spellFire(dt, t);
+  else if (currentSpell === 'ice') spellIce(dt, t);
+  else if (currentSpell === 'lightning') spellLightning(dt, t);
+  else if (currentSpell === 'heal') spellHeal(dt, t);
+
+  // Update particles
+  for (let i = active.length - 1; i >= 0; i--) {
+    const p = active[i];
+    p._life--;
+    if (p._life <= 0) { retireParticle(p, active); active.splice(i, 1); continue; }
+    p._vy += p._grav;
+    p._vx *= p._fric;
+    p._vy *= p._fric;
+    p.x += p._vx;
+    p.y += p._vy;
+    p.rotation += p._rotSpd;
+    const lifeRatio = p._life / p._maxLife;
+    p.alpha = p._fadeMode === 'late' ? (lifeRatio < 0.3 ? lifeRatio / 0.3 : 1) : lifeRatio;
+    p.scale.set(p._startScale * (0.3 + lifeRatio * 0.7));
+  }
+
+  // Update glow particles
+  for (let i = glowActive.length - 1; i >= 0; i--) {
+    const p = glowActive[i];
+    p._life--;
+    if (p._life <= 0) { retireParticle(p, glowActive); glowActive.splice(i, 1); continue; }
+    p.x += p._vx || 0;
+    p.y += p._vy || 0;
+    const lifeRatio = p._life / p._maxLife;
+    p.alpha = lifeRatio * 0.6;
+    p.scale.set(p._startScale * (0.5 + lifeRatio * 0.5));
+  }
+
+  // Screen shake
+  if (screenShake > 0) {
+    app.stage.x = Math.sin(t * 80) * screenShake;
+    app.stage.y = Math.cos(t * 90) * screenShake * 0.7;
+    screenShake *= 0.9;
+    if (screenShake < 0.3) { screenShake = 0; app.stage.x = 0; app.stage.y = 0; }
+  }
+
+  // Flash
+  flashGfx.clear();
+  if (flashAlpha > 0.01) {
+    flashGfx.beginFill(flashColor, flashAlpha);
+    flashGfx.drawRect(-10, -10, W + 20, H + 20);
+    flashGfx.endFill();
+    flashAlpha *= 0.88;
+  }
+
+  // Counter
+  document.getElementById('counter').textContent =
+    '파티클: ' + (active.length + glowActive.length) + ' | FPS: ' + Math.round(app.ticker.FPS);
+});
+</script>
+</body>
+</html>
