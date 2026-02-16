@@ -1,7 +1,13 @@
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
 
 from app.api.compile import router as compile_router
+
+# Load environment variables from .env file in project root
+env_path = Path(__file__).parent.parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 app = FastAPI(
     title="RuneSmith API",
