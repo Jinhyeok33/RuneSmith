@@ -503,6 +503,218 @@ function createAoEAnimation(
   return { objects, update };
 }
 
+function createShieldAnimation(
+  scene: THREE.Scene,
+  element: string,
+  bloom: UnrealBloomPass,
+): SpellAnimation {
+  const colors = getColors(element);
+  const objects: THREE.Object3D[] = [];
+
+  // Shield dome (hemisphere)
+  const domeGeo = new THREE.SphereGeometry(1.5, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+  const domeMat = new THREE.MeshBasicMaterial({
+    color: colors.primary,
+    transparent: true,
+    opacity: 0,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+  });
+  const dome = new THREE.Mesh(domeGeo, domeMat);
+  dome.position.set(0, 0.1, 0);
+  scene.add(dome);
+  objects.push(dome);
+
+  // Hexagon pattern particles
+  const hexCount = 50;
+  const hexGeo = new THREE.BufferGeometry();
+  const hexPositions = new Float32Array(hexCount * 3);
+  for (let i = 0; i < hexCount; i++) {
+    const phi = Math.acos(2 * Math.random() - 1);
+    const theta = Math.random() * Math.PI * 2;
+    const r = 1.5;
+    hexPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    hexPositions[i * 3 + 1] = Math.abs(r * Math.cos(phi));
+    hexPositions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+  }
+  hexGeo.setAttribute('position', new THREE.BufferAttribute(hexPositions, 3));
+  const hexMat = new THREE.PointsMaterial({
+    color: colors.secondary,
+    size: 0.15,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+  });
+  const hexagons = new THREE.Points(hexGeo, hexMat);
+  scene.add(hexagons);
+  objects.push(hexagons);
+
+  let time = 0;
+
+  function update(dt: number, t: number): boolean {
+    time += dt;
+    const dur = 4;
+    const appear = Math.min(1, time / 0.5);
+    const fade = time > dur - 1 ? Math.max(0, dur - time) : 1;
+
+    domeMat.opacity = appear * fade * 0.3;
+    hexMat.opacity = appear * fade * 0.8;
+
+    // Pulse effect
+    const pulse = 0.95 + Math.sin(t * 3) * 0.05;
+    dome.scale.set(pulse, pulse, pulse);
+    hexagons.rotation.y = t * 0.3;
+
+    bloom.strength = 1.2 + appear * fade * 0.4;
+
+    if (time > dur) {
+      bloom.strength = 1.2;
+      return true;
+    }
+    return false;
+  }
+
+  return { objects, update };
+}
+
+function createShockwaveAnimation(
+  scene: THREE.Scene,
+  element: string,
+  bloom: UnrealBloomPass,
+): SpellAnimation {
+  const colors = getColors(element);
+  const objects: THREE.Object3D[] = [];
+
+  // Multiple expanding rings
+  const ringCount = 3;
+  const rings: THREE.Mesh[] = [];
+  for (let i = 0; i < ringCount; i++) {
+    const ringGeo = new THREE.TorusGeometry(0.2, 0.08, 8, 32);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: colors.primary,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(0, 0.15, 0);
+    scene.add(ring);
+    objects.push(ring);
+    rings.push(ring);
+  }
+
+  const light = new THREE.PointLight(colors.primary, 10, 20);
+  light.position.set(0, 2, 0);
+  scene.add(light);
+  objects.push(light);
+
+  let time = 0;
+
+  function update(dt: number, t: number): boolean {
+    time += dt;
+    const dur = 2.5;
+
+    rings.forEach((ring, idx) => {
+      const offset = idx * 0.15;
+      const localTime = Math.max(0, time - offset);
+      const scale = 1 + localTime * 6;
+      const fade = Math.max(0, 1 - localTime / 1.5);
+
+      ring.scale.set(scale, scale, scale);
+      (ring.material as THREE.MeshBasicMaterial).opacity = fade * 0.7;
+    });
+
+    const fade = time > dur - 0.5 ? Math.max(0, (dur - time) / 0.5) : 1;
+    light.intensity = fade * 12;
+    bloom.strength = 1.2 + fade * 1.5;
+
+    if (time > dur) {
+      bloom.strength = 1.2;
+      return true;
+    }
+    return false;
+  }
+
+  return { objects, update };
+}
+
+function createOrbitalAnimation(
+  scene: THREE.Scene,
+  element: string,
+  bloom: UnrealBloomPass,
+): SpellAnimation {
+  const colors = getColors(element);
+  const objects: THREE.Object3D[] = [];
+
+  // Central orb
+  const coreGeo = new THREE.SphereGeometry(0.3, 16, 16);
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: colors.primary,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+  });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  core.position.set(0, 2, 0);
+  scene.add(core);
+  objects.push(core);
+
+  // Orbiting satellites
+  const satCount = 4;
+  const satellites: THREE.Mesh[] = [];
+  for (let i = 0; i < satCount; i++) {
+    const satGeo = new THREE.SphereGeometry(0.15, 8, 8);
+    const satMat = new THREE.MeshBasicMaterial({
+      color: colors.secondary,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+    });
+    const sat = new THREE.Mesh(satGeo, satMat);
+    scene.add(sat);
+    objects.push(sat);
+    satellites.push(sat);
+  }
+
+  const light = new THREE.PointLight(colors.primary, 0, 10);
+  core.add(light);
+
+  let time = 0;
+
+  function update(dt: number, t: number): boolean {
+    time += dt;
+    const dur = 4;
+    const appear = Math.min(1, time / 0.6);
+    const fade = time > dur - 1 ? Math.max(0, dur - time) : 1;
+
+    coreMat.opacity = appear * fade * 0.8;
+    light.intensity = appear * fade * 6;
+
+    // Update satellite orbits
+    satellites.forEach((sat, idx) => {
+      const angle = t * 2 + (idx * Math.PI * 2) / satCount;
+      const radius = 1.5;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      const y = 2 + Math.sin(t * 3 + idx) * 0.3;
+
+      sat.position.set(x, y, z);
+      (sat.material as THREE.MeshBasicMaterial).opacity = appear * fade * 0.7;
+    });
+
+    bloom.strength = 1.2 + appear * fade * 0.6;
+
+    if (time > dur) {
+      bloom.strength = 1.2;
+      return true;
+    }
+    return false;
+  }
+
+  return { objects, update };
+}
+
 // ── Skill → Animation Mapping ──
 function createSkillAnimation(
   scene: THREE.Scene,
@@ -512,7 +724,23 @@ function createSkillAnimation(
   const delivery = skill.mechanics.delivery;
   const element = skill.vfx.material;
   const geometry = skill.vfx.geometry;
+  const effects = skill.mechanics.effects;
+  const keywords = skill.mechanics.keywords;
 
+  // Special effects based on effect types
+  const hasShield = effects.some((e) => e.type === 'Shield' || e.type === 'DamageReduce');
+  const hasBuff = effects.some((e) => e.type === 'Haste' || e.type === 'Cleanse');
+  const hasExplosive = keywords.includes('Explosive');
+
+  if (hasShield || delivery === 'Buff') {
+    return createShieldAnimation(scene, element, bloom);
+  }
+  if (hasExplosive || delivery === 'AoE_Nova') {
+    return createShockwaveAnimation(scene, element, bloom);
+  }
+  if (hasBuff || delivery === 'Turret' || delivery === 'Totem') {
+    return createOrbitalAnimation(scene, element, bloom);
+  }
   if (delivery === 'Projectile' || delivery === 'Bolt') {
     return createProjectileAnimation(scene, element, geometry, bloom);
   }

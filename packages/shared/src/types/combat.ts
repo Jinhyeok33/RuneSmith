@@ -15,12 +15,16 @@ export interface Enemy {
   isElite: boolean;
 }
 
+export type AttackType = 'single' | 'aoe' | 'beam' | 'charge' | 'multi_hit';
+
 export interface EnemyPattern {
   name: string;
   damage: number;
   element: MaterialElement;
   telegraph: number;  // ms (텔레그래프 표시 시간)
   dodgeable: boolean;
+  attackType: AttackType; // 공격 타입 (시각 효과에 영향)
+  hitCount?: number; // multi_hit일 경우 타수
 }
 
 // ── Player ──

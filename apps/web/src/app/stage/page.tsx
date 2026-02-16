@@ -29,7 +29,13 @@ interface LogEntry {
   id: number;
 }
 
-type BattlePhase = 'preparing' | 'player_turn' | 'animating' | 'enemy_turn' | 'wave_clear' | 'victory' | 'defeat';
+type BattlePhase = 'preparing' | 'player_turn' | 'animating' | 'enemy_turn' | 'telegraph' | 'dodge_window' | 'wave_clear' | 'victory' | 'defeat';
+
+interface TelegraphData {
+  enemyName: string;
+  pattern: import('@runesmith/shared').EnemyPattern;
+  enemyIdx: number;
+}
 
 export default function StagePage() {
   const worldTier = useGameStore((s) => s.worldTier);
@@ -52,6 +58,10 @@ export default function StagePage() {
   const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
   const [turn, setTurn] = useState(0);
   const [screenShake, setScreenShake] = useState(0);
+  const [telegraph, setTelegraph] = useState<TelegraphData | null>(null);
+  const [dodgeWindow, setDodgeWindow] = useState(false);
+  const [dodgeSuccess, setDodgeSuccess] = useState(false);
+  const [dodgeAttempts, setDodgeAttempts] = useState(0);
 
   const logIdRef = useRef(0);
   const floatIdRef = useRef(0);
@@ -98,20 +108,65 @@ export default function StagePage() {
     setTimeout(() => addLog(`World ${worldTier} - Stage ${sNum} 전투 시작!`, '#c084fc'), 50);
   }, [worldTier, addLog]);
 
+  // ── Dodge Handler ──
+  const handleDodge = useCallback(() => {
+    if (!dodgeWindow) return;
+    setDodgeSuccess(true);
+    setDodgeAttempts((a) => a + 1);
+    addLog('회피 성공! 무적 상태!', '#34d399');
+    shake(0.5);
+  }, [dodgeWindow, addLog, shake]);
+
   // ── Enemy Turn ──
   const doEnemyTurn = useCallback(async (aliveEnemies: Enemy[]) => {
     setPhase('enemy_turn');
-    for (const enemy of aliveEnemies) {
-      await sleep(600);
+    for (const [idx, enemy] of aliveEnemies.entries()) {
       const pattern = enemy.patterns[Math.floor(Math.random() * enemy.patterns.length)];
-      const dmg = Math.round(pattern.damage * (0.8 + Math.random() * 0.4));
-      setPlayerHp((hp) => Math.max(0, hp - dmg));
-      addFloat(180 + Math.random() * 40, 180 + Math.random() * 30, `${dmg}`, '#ef4444', false);
-      shake(1);
-      addLog(`${enemy.name}의 ${pattern.name}! ${dmg} 피해!`, '#ef4444');
+
+      // Show telegraph
+      if (pattern.dodgeable) {
+        setPhase('telegraph');
+        setTelegraph({ enemyName: enemy.name, pattern, enemyIdx: idx });
+        addLog(`${enemy.name}이(가) ${pattern.name} 준비 중...`, '#f97316');
+        await sleep(pattern.telegraph);
+        setTelegraph(null);
+
+        // Dodge window
+        setPhase('dodge_window');
+        setDodgeWindow(true);
+        setDodgeSuccess(false);
+        await sleep(500); // 0.5초 dodge window
+        setDodgeWindow(false);
+      } else {
+        await sleep(600);
+      }
+
+      // Attack
+      setPhase('enemy_turn');
+      const wasDodged = dodgeSuccess;
+      setDodgeSuccess(false);
+
+      if (wasDodged) {
+        addLog(`${pattern.name}을(를) 회피했다!`, '#34d399');
+        addFloat(180 + Math.random() * 40, 180 + Math.random() * 30, 'DODGE!', '#34d399', false);
+      } else {
+        const hitCount = pattern.hitCount ?? 1;
+        let totalDmg = 0;
+        for (let h = 0; h < hitCount; h++) {
+          const dmg = Math.round(pattern.damage * (0.8 + Math.random() * 0.4));
+          totalDmg += dmg;
+          setPlayerHp((hp) => Math.max(0, hp - dmg));
+          addFloat(180 + Math.random() * 40 + h * 15, 180 + Math.random() * 30 + h * 10, `${dmg}`, '#ef4444', false);
+          if (hitCount > 1) await sleep(150);
+        }
+        shake(pattern.attackType === 'charge' ? 2 : 1);
+        addLog(`${enemy.name}의 ${pattern.name}! ${totalDmg} 피해!`, '#ef4444');
+      }
+
+      await sleep(300);
     }
     await sleep(400);
-  }, [addFloat, addLog, shake]);
+  }, [addFloat, addLog, shake, dodgeSuccess]);
 
   // ── Wave Clear ──
   const doWaveClear = useCallback(async () => {
@@ -270,6 +325,18 @@ export default function StagePage() {
     return () => cancelAnimationFrame(id);
   }, [floatingTexts, setTick]);
 
+  // Keyboard dodge
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && dodgeWindow) {
+        e.preventDefault();
+        handleDodge();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [dodgeWindow, handleDodge]);
+
   const hpPct = (playerHp / playerMaxHp) * 100;
   const mpPct = (playerMp / playerMaxMp) * 100;
 
@@ -381,7 +448,37 @@ export default function StagePage() {
         </div>
 
         {/* Phase Overlays */}
-        {phase === 'enemy_turn' && (
+        {phase === 'telegraph' && telegraph && (
+          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center pointer-events-none">
+            <div className="relative">
+              <div className="text-4xl font-black text-[#f97316] mb-2 animate-pulse" style={{ textShadow: '0 0 40px rgba(249,115,22,0.6)' }}>
+                ⚠️ {telegraph.pattern.name}
+              </div>
+              <div className="text-sm text-[var(--text-secondary)]">{telegraph.enemyName}</div>
+              {/* Attack Type Indicator */}
+              {telegraph.pattern.attackType === 'aoe' && (
+                <div className="absolute -inset-32 border-4 border-[#f97316]/40 rounded-full animate-ping" />
+              )}
+              {telegraph.pattern.attackType === 'beam' && (
+                <div className="absolute left-1/2 -translate-x-1/2 w-2 h-96 bg-gradient-to-b from-[#f97316]/60 to-transparent" />
+              )}
+            </div>
+          </div>
+        )}
+        {phase === 'dodge_window' && (
+          <div className="absolute inset-0 z-45 flex flex-col items-center justify-center">
+            <button
+              onClick={handleDodge}
+              className="px-16 py-8 text-3xl font-black rounded-2xl bg-gradient-to-r from-[#22c55e] to-[#059669] text-white shadow-2xl animate-bounce border-4 border-white/30"
+              style={{ textShadow: '0 2px 10px rgba(0,0,0,0.5)', boxShadow: '0 0 60px rgba(34,197,94,0.5)' }}
+              autoFocus
+            >
+              회피! (SPACE)
+            </button>
+            <p className="text-xs text-[var(--text-secondary)] mt-4">클릭 또는 스페이스바를 눌러 회피하세요!</p>
+          </div>
+        )}
+        {phase === 'enemy_turn' && !telegraph && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-2xl font-bold text-[#ef4444] animate-pulse z-40" style={{ textShadow: '0 0 30px rgba(239,68,68,0.5)' }}>
             적의 공격!
           </div>

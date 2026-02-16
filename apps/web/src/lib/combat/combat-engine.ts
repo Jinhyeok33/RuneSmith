@@ -51,14 +51,29 @@ function generateEnemy(
 
   const patternCount = type === 'boss' ? 5 : type === 'elite' ? 3 : 2;
   const patterns: EnemyPattern[] = [];
+
+  // Pattern library
+  const attackTypes: Array<{ type: import('@runesmith/shared').AttackType; name: string; dmgMult: number }> = [
+    { type: 'single', name: '일격', dmgMult: 1.0 },
+    { type: 'aoe', name: '광역 공격', dmgMult: 0.7 },
+    { type: 'beam', name: '관통 빔', dmgMult: 0.9 },
+    { type: 'charge', name: '돌진', dmgMult: 1.2 },
+    { type: 'multi_hit', name: '연타', dmgMult: 0.5 },
+  ];
+
   for (let i = 0; i < patternCount; i++) {
     const baseDmg = 30 * Math.pow(1.3, worldTier - 1);
+    const attackPattern = attackTypes[Math.floor(Math.random() * attackTypes.length)];
+    const hitCount = attackPattern.type === 'multi_hit' ? 2 + Math.floor(Math.random() * 2) : undefined;
+
     patterns.push({
-      name: `공격 ${i + 1}`,
-      damage: Math.round(baseDmg * (0.8 + Math.random() * 0.6)),
+      name: attackPattern.name,
+      damage: Math.round(baseDmg * attackPattern.dmgMult * (0.8 + Math.random() * 0.4)),
       element,
       telegraph: type === 'boss' ? 600 : 800,
       dodgeable: true,
+      attackType: attackPattern.type,
+      hitCount,
     });
   }
 
