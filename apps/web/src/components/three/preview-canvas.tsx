@@ -715,6 +715,397 @@ function createOrbitalAnimation(
   return { objects, update };
 }
 
+function createRuneCircleAnimation(
+  scene: THREE.Scene,
+  element: string,
+  bloom: UnrealBloomPass,
+): SpellAnimation {
+  const colors = getColors(element);
+  const objects: THREE.Object3D[] = [];
+
+  // Main rune circle
+  const circleGeo = new THREE.TorusGeometry(2.5, 0.05, 8, 64);
+  const circleMat = new THREE.MeshBasicMaterial({
+    color: colors.primary,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+  });
+  const circle = new THREE.Mesh(circleGeo, circleMat);
+  circle.rotation.x = -Math.PI / 2;
+  circle.position.set(0, 0.05, 0);
+  scene.add(circle);
+  objects.push(circle);
+
+  // Inner rotating runes (smaller circles)
+  const runeCount = 8;
+  const runes: THREE.Mesh[] = [];
+  for (let i = 0; i < runeCount; i++) {
+    const runeGeo = new THREE.TorusGeometry(0.15, 0.02, 4, 16);
+    const runeMat = new THREE.MeshBasicMaterial({
+      color: colors.secondary,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+    });
+    const rune = new THREE.Mesh(runeGeo, runeMat);
+    rune.rotation.x = -Math.PI / 2;
+    scene.add(rune);
+    objects.push(rune);
+    runes.push(rune);
+  }
+
+  // Central glow point
+  const glowGeo = new THREE.SphereGeometry(0.3, 16, 16);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: colors.primary,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.position.set(0, 0.5, 0);
+  scene.add(glow);
+  objects.push(glow);
+
+  const light = new THREE.PointLight(colors.primary, 0, 15);
+  light.position.set(0, 1, 0);
+  scene.add(light);
+  objects.push(light);
+
+  let time = 0;
+
+  function update(dt: number, t: number): boolean {
+    time += dt;
+    const dur = 5;
+    const appear = Math.min(1, time / 0.8);
+    const fade = time > dur - 1 ? Math.max(0, dur - time) : 1;
+
+    // Main circle rotation
+    circle.rotation.z = t * 0.5;
+    circleMat.opacity = appear * fade * 0.8;
+
+    // Runes orbiting
+    runes.forEach((rune, idx) => {
+      const angle = -t * 1.2 + (idx * Math.PI * 2) / runeCount;
+      const radius = 1.8;
+      rune.position.x = Math.cos(angle) * radius;
+      rune.position.z = Math.sin(angle) * radius;
+      rune.position.y = 0.05 + Math.sin(t * 2 + idx) * 0.1;
+      (rune.material as THREE.MeshBasicMaterial).opacity = appear * fade * 0.7;
+    });
+
+    // Central glow pulse
+    const pulse = 0.8 + Math.sin(t * 4) * 0.2;
+    glow.scale.set(pulse, pulse, pulse);
+    glowMat.opacity = appear * fade * 0.6;
+
+    light.intensity = appear * fade * 10;
+    bloom.strength = 1.2 + appear * fade * 0.8;
+
+    if (time > dur) {
+      bloom.strength = 1.2;
+      return true;
+    }
+    return false;
+  }
+
+  return { objects, update };
+}
+
+function createChainLinkAnimation(
+  scene: THREE.Scene,
+  element: string,
+  bloom: UnrealBloomPass,
+): SpellAnimation {
+  const colors = getColors(element);
+  const objects: THREE.Object3D[] = [];
+
+  // Target spheres
+  const targetCount = 3;
+  const targets: THREE.Mesh[] = [];
+  const targetPositions: THREE.Vector3[] = [
+    new THREE.Vector3(2, 2, -2),
+    new THREE.Vector3(-1.5, 2.5, -1),
+    new THREE.Vector3(0.5, 1.5, -3),
+  ];
+
+  for (let i = 0; i < targetCount; i++) {
+    const targetGeo = new THREE.SphereGeometry(0.25, 12, 12);
+    const targetMat = new THREE.MeshBasicMaterial({
+      color: colors.secondary,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+    });
+    const target = new THREE.Mesh(targetGeo, targetMat);
+    target.position.copy(targetPositions[i]);
+    scene.add(target);
+    objects.push(target);
+    targets.push(target);
+  }
+
+  // Lightning chains between targets
+  const chains: THREE.Line[] = [];
+  for (let i = 0; i < targetCount - 1; i++) {
+    const chainGeo = new THREE.BufferGeometry();
+    const points = [];
+    const segmentCount = 20;
+    for (let j = 0; j <= segmentCount; j++) {
+      points.push(new THREE.Vector3());
+    }
+    chainGeo.setFromPoints(points);
+    const chainMat = new THREE.LineBasicMaterial({
+      color: colors.primary,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      linewidth: 2,
+    });
+    const chain = new THREE.Line(chainGeo, chainMat);
+    scene.add(chain);
+    objects.push(chain);
+    chains.push(chain);
+  }
+
+  let time = 0;
+
+  function update(dt: number, t: number): boolean {
+    time += dt;
+    const dur = 3.5;
+    const appear = Math.min(1, time / 0.5);
+    const fade = time > dur - 1 ? Math.max(0, dur - time) : 1;
+
+    // Update targets
+    targets.forEach((target, idx) => {
+      (target.material as THREE.MeshBasicMaterial).opacity = appear * fade * 0.8;
+      const pulse = 0.8 + Math.sin(t * 5 + idx * 1.2) * 0.2;
+      target.scale.set(pulse, pulse, pulse);
+    });
+
+    // Update chains with lightning effect
+    chains.forEach((chain, chainIdx) => {
+      const start = targetPositions[chainIdx];
+      const end = targetPositions[chainIdx + 1];
+      const positions = chain.geometry.attributes.position.array as Float32Array;
+      const segmentCount = 20;
+
+      for (let i = 0; i <= segmentCount; i++) {
+        const p = i / segmentCount;
+        const x = start.x + (end.x - start.x) * p + (Math.random() - 0.5) * 0.3 * Math.sin(t * 10);
+        const y = start.y + (end.y - start.y) * p + (Math.random() - 0.5) * 0.3 * Math.sin(t * 10 + 1);
+        const z = start.z + (end.z - start.z) * p + (Math.random() - 0.5) * 0.3 * Math.sin(t * 10 + 2);
+
+        positions[i * 3] = x;
+        positions[i * 3 + 1] = y;
+        positions[i * 3 + 2] = z;
+      }
+      chain.geometry.attributes.position.needsUpdate = true;
+      (chain.material as THREE.LineBasicMaterial).opacity = appear * fade * 0.6 * (0.6 + Math.random() * 0.4);
+    });
+
+    bloom.strength = 1.2 + appear * fade * 1.2;
+
+    if (time > dur) {
+      bloom.strength = 1.2;
+      return true;
+    }
+    return false;
+  }
+
+  return { objects, update };
+}
+
+function createImpactDecalAnimation(
+  scene: THREE.Scene,
+  element: string,
+  bloom: UnrealBloomPass,
+): SpellAnimation {
+  const colors = getColors(element);
+  const objects: THREE.Object3D[] = [];
+
+  // Ground impact crater
+  const craterGeo = new THREE.CircleGeometry(1.5, 32);
+  const craterMat = new THREE.MeshBasicMaterial({
+    color: colors.primary,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+  const crater = new THREE.Mesh(craterGeo, craterMat);
+  crater.rotation.x = -Math.PI / 2;
+  crater.position.set(0, 0.02, -2);
+  scene.add(crater);
+  objects.push(crater);
+
+  // Expanding shockwave on ground
+  const waveGeo = new THREE.RingGeometry(0.1, 0.2, 32);
+  const waveMat = new THREE.MeshBasicMaterial({
+    color: colors.secondary,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+  const wave = new THREE.Mesh(waveGeo, waveMat);
+  wave.rotation.x = -Math.PI / 2;
+  wave.position.set(0, 0.03, -2);
+  scene.add(wave);
+  objects.push(wave);
+
+  // Debris particles
+  const debrisGeo = new THREE.BufferGeometry();
+  const debrisCount = 40;
+  const debrisPositions = new Float32Array(debrisCount * 3);
+  const debrisVels: THREE.Vector3[] = [];
+  for (let i = 0; i < debrisCount; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * 0.5;
+    debrisPositions[i * 3] = Math.cos(angle) * dist;
+    debrisPositions[i * 3 + 1] = 0.1;
+    debrisPositions[i * 3 + 2] = -2 + Math.sin(angle) * dist;
+
+    const velAngle = angle + (Math.random() - 0.5) * 0.5;
+    debrisVels.push(new THREE.Vector3(
+      Math.cos(velAngle) * (2 + Math.random() * 2),
+      3 + Math.random() * 3,
+      Math.sin(velAngle) * (2 + Math.random() * 2),
+    ));
+  }
+  debrisGeo.setAttribute('position', new THREE.BufferAttribute(debrisPositions, 3));
+  const debrisMat = new THREE.PointsMaterial({
+    color: colors.primary,
+    size: 0.1,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+  });
+  const debris = new THREE.Points(debrisGeo, debrisMat);
+  scene.add(debris);
+  objects.push(debris);
+
+  let time = 0;
+
+  function update(dt: number, t: number): boolean {
+    time += dt;
+    const dur = 2.5;
+    const appear = Math.min(1, time / 0.2);
+    const fade = time > dur - 1 ? Math.max(0, dur - time) : 1;
+
+    // Crater fade in and stay
+    craterMat.opacity = appear * 0.4 * fade;
+
+    // Wave expansion
+    const waveScale = 1 + time * 4;
+    wave.scale.set(waveScale, waveScale, waveScale);
+    waveMat.opacity = Math.max(0, 0.8 - time / dur) * appear;
+
+    // Debris physics
+    for (let i = 0; i < debrisCount; i++) {
+      debrisPositions[i * 3] += debrisVels[i].x * dt;
+      debrisPositions[i * 3 + 1] += debrisVels[i].y * dt;
+      debrisPositions[i * 3 + 2] += debrisVels[i].z * dt;
+
+      debrisVels[i].y -= 9.8 * dt; // gravity
+    }
+    debrisGeo.attributes.position.needsUpdate = true;
+    debrisMat.opacity = appear * fade * 0.7;
+
+    bloom.strength = 1.2 + appear * 0.3;
+
+    if (time > dur) {
+      bloom.strength = 1.2;
+      return true;
+    }
+    return false;
+  }
+
+  return { objects, update };
+}
+
+function createVolumetricAnimation(
+  scene: THREE.Scene,
+  element: string,
+  bloom: UnrealBloomPass,
+): SpellAnimation {
+  const colors = getColors(element);
+  const objects: THREE.Object3D[] = [];
+
+  // Volumetric cloud using particle layers
+  const cloudLayers = 5;
+  const clouds: THREE.Points[] = [];
+
+  for (let layer = 0; layer < cloudLayers; layer++) {
+    const cloudGeo = new THREE.BufferGeometry();
+    const particleCount = 100;
+    const positions = new Float32Array(particleCount * 3);
+
+    for (let i = 0; i < particleCount; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.random() * Math.PI;
+      const r = 0.8 + layer * 0.3;
+
+      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = 1.5 + r * Math.cos(phi);
+      positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    }
+
+    cloudGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const cloudMat = new THREE.PointsMaterial({
+      color: colors.primary,
+      size: 0.3 + layer * 0.1,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: true,
+    });
+    const cloud = new THREE.Points(cloudGeo, cloudMat);
+    scene.add(cloud);
+    objects.push(cloud);
+    clouds.push(cloud);
+  }
+
+  const light = new THREE.PointLight(colors.primary, 0, 12);
+  light.position.set(0, 2, 0);
+  scene.add(light);
+  objects.push(light);
+
+  let time = 0;
+
+  function update(dt: number, t: number): boolean {
+    time += dt;
+    const dur = 4;
+    const appear = Math.min(1, time / 1);
+    const fade = time > dur - 1.5 ? Math.max(0, (dur - time) / 1.5) : 1;
+
+    clouds.forEach((cloud, layerIdx) => {
+      // Rotation and swirl
+      cloud.rotation.y = t * (0.3 + layerIdx * 0.1);
+      cloud.rotation.x = Math.sin(t * 0.5) * 0.2;
+
+      // Opacity based on layer
+      const layerOpacity = 0.15 - layerIdx * 0.02;
+      (cloud.material as THREE.PointsMaterial).opacity = appear * fade * layerOpacity;
+
+      // Scale pulse
+      const pulse = 1 + Math.sin(t * 2 + layerIdx) * 0.1;
+      cloud.scale.set(pulse, pulse, pulse);
+    });
+
+    light.intensity = appear * fade * 8;
+    bloom.strength = 1.2 + appear * fade * 1;
+
+    if (time > dur) {
+      bloom.strength = 1.2;
+      return true;
+    }
+    return false;
+  }
+
+  return { objects, update };
+}
+
 // ── Skill → Animation Mapping ──
 function createSkillAnimation(
   scene: THREE.Scene,
@@ -730,27 +1121,53 @@ function createSkillAnimation(
   // Special effects based on effect types
   const hasShield = effects.some((e) => e.type === 'Shield' || e.type === 'DamageReduce');
   const hasBuff = effects.some((e) => e.type === 'Haste' || e.type === 'Cleanse');
+  const hasHeal = effects.some((e) => e.type === 'Heal' || e.type === 'HoT');
   const hasExplosive = keywords.includes('Explosive');
+  const hasChain = keywords.includes('Chain');
+  const hasRicochet = keywords.includes('Ricochet');
+  const isVolumetric = element === 'Void' || element === 'Shadow' || element === 'Holy';
 
+  // Chain effects
+  if (hasChain || hasRicochet) {
+    return createChainLinkAnimation(scene, element, bloom);
+  }
+  // Summon effects
+  if (delivery === 'Minion' || delivery === 'Trap' || (hasBuff && hasHeal)) {
+    return createRuneCircleAnimation(scene, element, bloom);
+  }
+  // Volumetric effects
+  if (isVolumetric || delivery === 'Zone' || delivery === 'Wall') {
+    return createVolumetricAnimation(scene, element, bloom);
+  }
+  // Shield effects
   if (hasShield || delivery === 'Buff') {
     return createShieldAnimation(scene, element, bloom);
   }
+  // Explosive shockwave
   if (hasExplosive || delivery === 'AoE_Nova') {
     return createShockwaveAnimation(scene, element, bloom);
   }
+  // Turret/Totem orbital
   if (hasBuff || delivery === 'Turret' || delivery === 'Totem') {
     return createOrbitalAnimation(scene, element, bloom);
   }
+  // Strike with impact
+  if (delivery === 'Strike') {
+    if (element === 'Lightning') {
+      return createLightningAnimation(scene, bloom);
+    }
+    return createImpactDecalAnimation(scene, element, bloom);
+  }
+  // Projectile
   if (delivery === 'Projectile' || delivery === 'Bolt') {
     return createProjectileAnimation(scene, element, geometry, bloom);
   }
+  // Beam
   if (delivery === 'Beam') {
     return createBeamAnimation(scene, element, bloom);
   }
-  if (delivery === 'Strike' && element === 'Lightning') {
-    return createLightningAnimation(scene, bloom);
-  }
-  if (delivery.startsWith('AoE') || delivery === 'Zone') {
+  // AoE
+  if (delivery.startsWith('AoE')) {
     return createAoEAnimation(scene, element, bloom);
   }
   // Default: projectile
