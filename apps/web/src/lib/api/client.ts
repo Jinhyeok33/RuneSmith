@@ -2,7 +2,7 @@
  * API Client for RuneSmith backend
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
 interface ApiError {
   detail: string;
@@ -34,9 +34,9 @@ export class ApiClient {
     const url = `${API_BASE_URL}${endpoint}`;
     const token = this.getToken();
 
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...options.headers,
+      ...(options.headers as Record<string, string>),
     };
 
     if (token) {
@@ -143,6 +143,31 @@ export class ApiClient {
   }
 
   // Skills
+  async saveSkill(skill: {
+    skill_id: string;
+    name: string;
+    user_input: string;
+    seed: number;
+    world_tier: number;
+    combat_budget: number;
+    combat_budget_max: number;
+    vfx_budget: number;
+    vfx_budget_base: number;
+    vfx_budget_paid: number;
+    mechanics: object;
+    vfx: object;
+    stats: object;
+  }) {
+    return this.request<{ id: number; skill_id: string }>('/api/skills/save', {
+      method: 'POST',
+      body: JSON.stringify(skill),
+    });
+  }
+
+  async getMySkills() {
+    return this.request('/api/skills/my');
+  }
+
   async compileSkill(user_input: string, world_tier: number, extra_vfx_budget: number = 0) {
     return this.request('/api/compile', {
       method: 'POST',
