@@ -1122,9 +1122,9 @@ function createSkillAnimation(
   const hasShield = effects.some((e) => e.type === 'Shield' || e.type === 'DamageReduce');
   const hasBuff = effects.some((e) => e.type === 'Haste' || e.type === 'Cleanse');
   const hasHeal = effects.some((e) => e.type === 'Heal' || e.type === 'HoT');
-  const hasExplosive = keywords.includes('Explosive');
-  const hasChain = keywords.includes('Chain');
-  const hasRicochet = keywords.includes('Ricochet');
+  const hasExplosive = keywords.some((k) => k.keyword === 'Explosive');
+  const hasChain = keywords.some((k) => k.keyword === 'Chain');
+  const hasRicochet = keywords.some((k) => k.keyword === 'Ricochet');
   const isVolumetric = element === 'Void' || element === 'Shadow' || element === 'Holy';
 
   // Chain effects
@@ -1179,9 +1179,10 @@ interface PreviewCanvasProps {
   skill?: SkillBlueprint | null;
   autoPlay?: boolean;
   className?: string;
+  battleMode?: boolean;
 }
 
-export default function PreviewCanvas({ skill, autoPlay = false, className }: PreviewCanvasProps) {
+export default function PreviewCanvas({ skill, autoPlay = false, className, battleMode = false }: PreviewCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<{
     renderer: THREE.WebGLRenderer;
@@ -1192,7 +1193,7 @@ export default function PreviewCanvas({ skill, autoPlay = false, className }: Pr
     clock: THREE.Clock;
     animation: SpellAnimation | null;
     animationId: number;
-    crystal: THREE.Group;
+    crystal: THREE.Group | null;
     orbs: THREE.Points;
     cameraShake: number;
   } | null>(null);
@@ -1228,10 +1229,15 @@ export default function PreviewCanvas({ skill, autoPlay = false, className }: Pr
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.2;
+    if (battleMode) {
+      renderer.setClearColor(0x000000, 0);
+    }
 
     // Scene
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x06030f, 0.015);
+    if (!battleMode) {
+      scene.fog = new THREE.FogExp2(0x06030f, 0.015);
+    }
 
     // Camera
     const camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 200);
@@ -1247,23 +1253,45 @@ export default function PreviewCanvas({ skill, autoPlay = false, className }: Pr
     );
     composer.addPass(bloom);
 
-    // Environment
-    const groundGeo = new THREE.PlaneGeometry(60, 60);
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a0618, metalness: 0.8, roughness: 0.4 });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.rotation.x = -Math.PI / 2;
-    scene.add(ground);
-
-    const gridHelper = new THREE.GridHelper(40, 40, 0x1a0f30, 0x12091f);
-    gridHelper.position.y = 0.01;
-    scene.add(gridHelper);
-
+    // Lights (always needed for VFX visibility)
     scene.add(new THREE.AmbientLight(0x1a0f30, 0.8));
     const dirLight = new THREE.DirectionalLight(0x6d28d9, 0.4);
     dirLight.position.set(5, 10, 5);
     scene.add(dirLight);
 
-    // Floating orbs
+    let crystalGroup: THREE.Group | null = null;
+
+    if (!battleMode) {
+      // Environment (Forge only)
+      const groundGeo = new THREE.PlaneGeometry(60, 60);
+      const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a0618, metalness: 0.8, roughness: 0.4 });
+      const ground = new THREE.Mesh(groundGeo, groundMat);
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+
+      const gridHelper = new THREE.GridHelper(40, 40, 0x1a0f30, 0x12091f);
+      gridHelper.position.y = 0.01;
+      scene.add(gridHelper);
+
+      // Target crystal
+      crystalGroup = new THREE.Group();
+      const crystalGeo = new THREE.OctahedronGeometry(0.8, 0);
+      const crystalMat = new THREE.MeshStandardMaterial({
+        color: 0x6d28d9, emissive: 0x3b0764, emissiveIntensity: 0.5,
+        metalness: 0.9, roughness: 0.1, transparent: true, opacity: 0.85,
+      });
+      const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+      crystal.scale.set(1, 1.5, 1);
+      crystal.position.y = 2;
+      crystalGroup.add(crystal);
+      const innerGlow = new THREE.PointLight(0x8b5cf6, 2, 8);
+      innerGlow.position.y = 2;
+      crystalGroup.add(innerGlow);
+      crystalGroup.position.set(0, 0, -2);
+      scene.add(crystalGroup);
+    }
+
+    // Floating orbs (always - atmosphere)
     const orbGeo = new THREE.BufferGeometry();
     const orbCount = 200;
     const orbPositions = new Float32Array(orbCount * 3);
@@ -1283,23 +1311,6 @@ export default function PreviewCanvas({ skill, autoPlay = false, className }: Pr
     const orbs = new THREE.Points(orbGeo, orbMat);
     scene.add(orbs);
 
-    // Target crystal
-    const crystalGroup = new THREE.Group();
-    const crystalGeo = new THREE.OctahedronGeometry(0.8, 0);
-    const crystalMat = new THREE.MeshStandardMaterial({
-      color: 0x6d28d9, emissive: 0x3b0764, emissiveIntensity: 0.5,
-      metalness: 0.9, roughness: 0.1, transparent: true, opacity: 0.85,
-    });
-    const crystal = new THREE.Mesh(crystalGeo, crystalMat);
-    crystal.scale.set(1, 1.5, 1);
-    crystal.position.y = 2;
-    crystalGroup.add(crystal);
-    const innerGlow = new THREE.PointLight(0x8b5cf6, 2, 8);
-    innerGlow.position.y = 2;
-    crystalGroup.add(innerGlow);
-    crystalGroup.position.set(0, 0, -2);
-    scene.add(crystalGroup);
-
     const clock = new THREE.Clock();
 
     const state = {
@@ -1318,8 +1329,11 @@ export default function PreviewCanvas({ skill, autoPlay = false, className }: Pr
       const dt = Math.min(clock.getDelta(), 0.05);
       const t = clock.getElapsedTime();
 
-      // Crystal rotation
-      crystal.rotation.y = t * 0.3;
+      // Crystal rotation (Forge only)
+      if (crystalGroup) {
+        const crystalMesh = crystalGroup.children[0];
+        if (crystalMesh) crystalMesh.rotation.y = t * 0.3;
+      }
 
       // Orbs float
       const orbPos = orbs.geometry.attributes.position;
@@ -1395,7 +1409,7 @@ export default function PreviewCanvas({ skill, autoPlay = false, className }: Pr
     <canvas
       ref={canvasRef}
       className={className}
-      style={{ width: '100%', height: '100%', display: 'block', background: '#06030f' }}
+      style={{ width: '100%', height: '100%', display: 'block', background: battleMode ? 'transparent' : '#06030f' }}
     />
   );
 }
