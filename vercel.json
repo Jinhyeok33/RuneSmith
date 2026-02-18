@@ -1,8 +1,7 @@
 {
-  "buildCommand": "npm run build",
-  "devCommand": "npm run dev",
+  "buildCommand": "npx turbo build --filter=@runesmith/web",
   "installCommand": "npm install",
-  "framework": null,
+  "framework": "nextjs",
   "outputDirectory": "apps/web/.next",
   "rewrites": [
     {
