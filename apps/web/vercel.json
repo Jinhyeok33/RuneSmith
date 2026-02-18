@@ -1,6 +1,5 @@
 {
   "installCommand": "cd ../.. && npm install",
-  "buildCommand": "next build",
   "rewrites": [
     {
       "source": "/api/:path*",
