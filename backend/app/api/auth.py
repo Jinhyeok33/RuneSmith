@@ -82,11 +82,6 @@ async def get_current_user(
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
     """Register new user"""
-    # Registration temporarily disabled
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Registration is temporarily disabled"
-    )
 
     # Check if username exists
     result = await db.execute(select(User).where(User.username == user_data.username))
