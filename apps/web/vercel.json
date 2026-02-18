@@ -1,4 +1,6 @@
 {
+  "installCommand": "cd ../.. && npm install",
+  "buildCommand": "cd ../.. && npx turbo build --filter=@runesmith/web",
   "rewrites": [
     {
       "source": "/api/:path*",
