@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import type { SkillBlueprint } from '@runesmith/shared';
-import { compileBlueprint } from '@runesmith/shared';
-import type { LLMParserOutput, MarketListing } from '@runesmith/shared';
+import type { MarketListing } from '@runesmith/shared';
 import { useGameStore } from '@/lib/store/game-store';
+import { apiClient } from '@/lib/api/client';
 
 const ELEM_COLORS: Record<string, string> = {
   Fire: '#f97316', Ice: '#38bdf8', Lightning: '#facc15', Water: '#0ea5e9',
@@ -13,97 +13,65 @@ const ELEM_COLORS: Record<string, string> = {
   Metal: '#d4d4d8', Crystal: '#e879f9',
 };
 
-function generateListings(): MarketListing[] {
-  const presets: { output: LLMParserOutput; seller: string; price: number; rating: number; purchases: number; world: number }[] = [
-    {
-      output: {
-        intent: { name: '메테오 스트라이크', description: '하늘에서 거대한 불꽃 운석이 떨어집니다', tags: ['fire', 'aoe', 'damage'] },
-        mechanics: { delivery: 'AoE_Circle', effects: [{ type: 'FlatDamage', value: 90 }, { type: 'DoT', value: 15, duration: 3000 }], keywords: [{ keyword: 'Explosive' }] },
-        vfx: { geometry: 'Meteor', motion: 'Accelerate', material: 'Fire', rhythm: 'Ramp_Up', palette: { primary: '#f97316', secondary: '#fbbf24' }, intensity: 0.9 },
-        seed: 2001,
-      },
-      seller: 'FlameWizard', price: 250, rating: 4.7, purchases: 342, world: 1,
-    },
-    {
-      output: {
-        intent: { name: '프로스트 노바', description: '주변 적을 얼리는 극한의 한파', tags: ['ice', 'aoe', 'cc'] },
-        mechanics: { delivery: 'AoE_Nova', effects: [{ type: 'FlatDamage', value: 50 }, { type: 'Stun', value: 0, duration: 1500 }], keywords: [] },
-        vfx: { geometry: 'Sphere', motion: 'Expand_Sphere', material: 'Ice', rhythm: 'Burst', palette: { primary: '#38bdf8', secondary: '#e0f2fe' }, intensity: 0.8 },
-        seed: 2002,
-      },
-      seller: 'IceMaster', price: 180, rating: 4.2, purchases: 215, world: 1,
-    },
-    {
-      output: {
-        intent: { name: '체인 라이트닝', description: '3체의 적에게 연쇄하는 전격', tags: ['lightning', 'chain'] },
-        mechanics: { delivery: 'Bolt', effects: [{ type: 'FlatDamage', value: 70 }], keywords: [{ keyword: 'Chain', n: 3 }] },
-        vfx: { geometry: 'Arc', motion: 'Straight', material: 'Lightning', rhythm: 'Staccato', palette: { primary: '#facc15', secondary: '#ffffff' }, intensity: 0.85 },
-        seed: 2003,
-      },
-      seller: 'ThunderGod', price: 320, rating: 4.9, purchases: 567, world: 2,
-    },
-    {
-      output: {
-        intent: { name: '심연의 촉수', description: '공허에서 촉수가 솟아올라 적을 속박', tags: ['void', 'cc'] },
-        mechanics: { delivery: 'Zone', effects: [{ type: 'FlatDamage', value: 40 }, { type: 'Root', value: 0, duration: 2000 }], keywords: [{ keyword: 'Lingering' }] },
-        vfx: { geometry: 'Vortex', motion: 'Float_Rise', material: 'Void', rhythm: 'Sustained', palette: { primary: '#a855f7', secondary: '#1e1b4b' }, intensity: 0.7 },
-        seed: 2004,
-      },
-      seller: 'VoidWalker', price: 400, rating: 4.5, purchases: 128, world: 3,
-    },
-    {
-      output: {
-        intent: { name: '성스러운 심판', description: '하늘에서 빛줄기가 적을 심판합니다', tags: ['holy', 'damage'] },
-        mechanics: { delivery: 'Strike', effects: [{ type: 'FlatDamage', value: 120 }, { type: 'PercentDamage', value: 0, percent: 10 }], keywords: [] },
-        vfx: { geometry: 'Beam_Geo', motion: 'Straight', material: 'Holy', rhythm: 'Ramp_Up', palette: { primary: '#fef08a', secondary: '#ffffff' }, intensity: 1.0 },
-        seed: 2005,
-      },
-      seller: 'Paladin', price: 500, rating: 4.8, purchases: 89, world: 4,
-    },
-    {
-      output: {
-        intent: { name: '크리스탈 배리어', description: '수정 보호막으로 몸을 감쌉니다', tags: ['crystal', 'defense'] },
-        mechanics: { delivery: 'Buff', effects: [{ type: 'Shield', value: 100 }, { type: 'DamageReduce', value: 0, percent: 15 }], keywords: [] },
-        vfx: { geometry: 'Bubble', motion: 'Orbit', material: 'Crystal', rhythm: 'Pulsing', palette: { primary: '#e879f9', secondary: '#67e8f9' }, intensity: 0.6 },
-        seed: 2006,
-      },
-      seller: 'CrystalMage', price: 220, rating: 4.3, purchases: 198, world: 2,
-    },
-    {
-      output: {
-        intent: { name: '블러드 레인', description: '피의 비가 적에게 지속 피해와 흡혈', tags: ['blood', 'dot'] },
-        mechanics: { delivery: 'AoE_Circle', effects: [{ type: 'DoT', value: 20, duration: 5000 }, { type: 'LifeSteal', value: 0, percent: 15 }], keywords: [{ keyword: 'Lingering' }] },
-        vfx: { geometry: 'Wave', motion: 'Float_Rise', material: 'Blood', rhythm: 'Heartbeat', palette: { primary: '#dc2626', secondary: '#450a0a' }, intensity: 0.75 },
-        seed: 2007,
-      },
-      seller: 'BloodMancer', price: 380, rating: 4.6, purchases: 156, world: 3,
-    },
-    {
-      output: {
-        intent: { name: '대지의 벽', description: '거대한 암석 벽이 솟아올라 적을 막습니다', tags: ['earth', 'wall'] },
-        mechanics: { delivery: 'Wall', effects: [{ type: 'FlatDamage', value: 30 }, { type: 'Knockback', value: 0, distance: 5 }], keywords: [{ keyword: 'Delayed' }] },
-        vfx: { geometry: 'Shard', motion: 'Float_Rise', material: 'Earth', rhythm: 'Delayed', palette: { primary: '#d97706', secondary: '#92400e' }, intensity: 0.65 },
-        seed: 2008,
-      },
-      seller: 'EarthShaker', price: 150, rating: 3.9, purchases: 87, world: 1,
-    },
-  ];
+interface ApiMarketListing {
+  id: number;
+  skill: {
+    id: number;
+    skill_id: string;
+    name: string;
+    world_tier: number;
+    combat_budget: number;
+    vfx_budget: number;
+    mechanics: any;
+    vfx: any;
+    stats: any;
+    times_used: number;
+  };
+  seller_username: string;
+  seller_id: number;
+  price: number;
+  currency_type: string;
+  status: string;
+  views: number;
+  purchases: number;
+  average_rating: number;
+  rating_count: number;
+  created_at: string;
+}
 
-  return presets.map((p, i) => {
-    const blueprint = compileBlueprint(p.output, p.world, 0, p.seller);
-    return {
-      id: `listing_${i}`,
-      skill: blueprint,
-      sellerId: p.seller.toLowerCase(),
-      sellerName: p.seller,
-      price: p.price,
-      rating: p.rating,
-      ratingCount: Math.floor(p.purchases * 0.3),
-      purchaseCount: p.purchases,
-      createdAt: new Date(Date.now() - Math.random() * 7 * 86400000).toISOString(),
-      isLocked: false,
-    };
-  });
+function convertApiListingToLocal(apiListing: ApiMarketListing, currentWorldTier: number): MarketListing & { isLocked: boolean; unlockCostRC?: number } {
+  const skill: SkillBlueprint = {
+    id: apiListing.skill.skill_id,
+    name: apiListing.skill.name,
+    description: apiListing.skill.mechanics?.intent?.description || '',
+    seed: 0,
+    worldTier: apiListing.skill.world_tier,
+    combatBudget: apiListing.skill.combat_budget,
+    combatBudgetMax: 100 * Math.pow(1.5, apiListing.skill.world_tier - 1),
+    vfxBudget: apiListing.skill.vfx_budget,
+    vfxBudgetBase: 100 + (apiListing.skill.world_tier - 1) * 25,
+    vfxBudgetPaid: 0,
+    mechanics: apiListing.skill.mechanics,
+    vfx: apiListing.skill.vfx,
+    stats: apiListing.skill.stats || {},
+  };
+
+  const isLocked = apiListing.skill.world_tier > currentWorldTier;
+  const unlockCostRC = isLocked ? 100 * (apiListing.skill.world_tier - currentWorldTier) : undefined;
+
+  return {
+    id: `listing_${apiListing.id}`,
+    skill,
+    sellerId: apiListing.seller_id.toString(),
+    sellerName: apiListing.seller_username,
+    price: apiListing.price,
+    rating: apiListing.average_rating,
+    ratingCount: apiListing.rating_count,
+    purchaseCount: apiListing.purchases,
+    createdAt: apiListing.created_at,
+    isLocked,
+    unlockCostRC,
+  };
 }
 
 type SortBy = 'popular' | 'newest' | 'price_asc' | 'price_desc' | 'rating';
@@ -112,42 +80,121 @@ export default function MarketBrowsePage() {
   const worldTier = useGameStore((s) => s.worldTier);
   const points = useGameStore((s) => s.points);
   const runeCrystals = useGameStore((s) => s.runeCrystals);
+  const isAuthenticated = useGameStore((s) => s.isAuthenticated);
+  const user = useGameStore((s) => s.user);
+  const syncFromUser = useGameStore((s) => s.syncFromUser);
   const addSkill = useGameStore((s) => s.addSkill);
-  const spendPoints = useGameStore((s) => s.spendPoints);
   const mySkills = useGameStore((s) => s.skills);
 
   const [sortBy, setSortBy] = useState<SortBy>('popular');
   const [elementFilter, setElementFilter] = useState('all');
-  const [purchased, setPurchased] = useState<Set<string>>(new Set());
+  const [listings, setListings] = useState<(MarketListing & { isLocked: boolean; unlockCostRC?: number })[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [purchasing, setPurchasing] = useState<string | null>(null);
 
-  const allListings = useMemo(() => generateListings(), []);
+  // Fetch listings from API
+  useEffect(() => {
+    const fetchListings = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const sortMap: Record<SortBy, string> = {
+          popular: 'popular',
+          newest: 'newest',
+          rating: 'rating',
+          price_asc: 'price_asc',
+          price_desc: 'price_desc',
+        };
 
-  const listings = useMemo(() => {
-    let result = allListings.map((l) => ({
-      ...l,
-      isLocked: l.skill.worldTier > worldTier,
-      unlockCostRC: l.skill.worldTier > worldTier ? 100 * (l.skill.worldTier - worldTier) : undefined,
-    }));
-    if (elementFilter !== 'all') result = result.filter((l) => l.skill.vfx.material === elementFilter);
-    switch (sortBy) {
-      case 'popular': result.sort((a, b) => b.purchaseCount - a.purchaseCount); break;
-      case 'newest': result.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)); break;
-      case 'price_asc': result.sort((a, b) => a.price - b.price); break;
-      case 'price_desc': result.sort((a, b) => b.price - a.price); break;
-      case 'rating': result.sort((a, b) => b.rating - a.rating); break;
+        const response = await apiClient.browseMarket({
+          element: elementFilter !== 'all' ? elementFilter : undefined,
+          sort_by: sortMap[sortBy],
+          limit: 50,
+        });
+
+        const converted = response.map((listing: ApiMarketListing) =>
+          convertApiListingToLocal(listing, worldTier)
+        );
+        setListings(converted);
+      } catch (err: any) {
+        setError(err.message || '마켓 데이터를 불러오는데 실패했습니다.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchListings();
+  }, [sortBy, elementFilter, worldTier]);
+
+  const handlePurchase = useCallback(async (listing: MarketListing & { isLocked: boolean }) => {
+    if (!isAuthenticated || !user) {
+      alert('로그인이 필요합니다.');
+      return;
     }
-    return result;
-  }, [allListings, sortBy, elementFilter, worldTier]);
+    if (listing.isLocked) {
+      alert(`World ${listing.skill.worldTier}에 도달해야 구매할 수 있습니다.`);
+      return;
+    }
+    if (mySkills.some((s) => s.name === listing.skill.name)) {
+      alert('이미 보유 중인 스킬입니다.');
+      return;
+    }
+    if (points < listing.price) {
+      alert('포인트가 부족합니다.');
+      return;
+    }
 
-  const handlePurchase = useCallback((listing: MarketListing) => {
-    if (listing.isLocked || purchased.has(listing.id)) return;
-    if (mySkills.some((s) => s.name === listing.skill.name)) return;
-    if (!spendPoints(listing.price)) return;
-    addSkill(listing.skill);
-    setPurchased((prev) => new Set(prev).add(listing.id));
-  }, [purchased, mySkills, spendPoints, addSkill]);
+    const listingId = parseInt(listing.id.replace('listing_', ''), 10);
+    setPurchasing(listing.id);
+
+    try {
+      const purchasedSkill = await apiClient.buySkill(listingId);
+
+      // Update local state
+      addSkill(listing.skill);
+
+      // Sync user data (points/rune crystals updated by backend)
+      const updatedUser = await apiClient.getMe();
+      syncFromUser(updatedUser);
+
+      alert(`${listing.skill.name} 구매 완료!`);
+
+      // Refresh listings to update purchase count
+      const response = await apiClient.browseMarket({
+        element: elementFilter !== 'all' ? elementFilter : undefined,
+        sort_by: sortBy,
+        limit: 50,
+      });
+      const converted = response.map((l: ApiMarketListing) =>
+        convertApiListingToLocal(l, worldTier)
+      );
+      setListings(converted);
+    } catch (err: any) {
+      alert(err.message || '구매에 실패했습니다.');
+    } finally {
+      setPurchasing(null);
+    }
+  }, [isAuthenticated, user, mySkills, points, addSkill, syncFromUser, sortBy, elementFilter, worldTier]);
 
   const elements = ['all', 'Fire', 'Ice', 'Lightning', 'Water', 'Nature', 'Earth', 'Wind', 'Void', 'Arcane', 'Holy', 'Shadow', 'Blood', 'Metal', 'Crystal'];
+
+  if (!isAuthenticated) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-4">로그인이 필요합니다</h2>
+          <p className="text-[var(--text-secondary)] mb-6">마켓플레이스를 이용하려면 로그인해주세요.</p>
+          <a
+            href="/auth/login"
+            className="px-6 py-3 rounded-lg bg-gradient-to-r from-[var(--accent-void)] to-[var(--accent-arcane)] text-white font-bold"
+          >
+            로그인하기
+          </a>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen flex flex-col">
@@ -160,6 +207,13 @@ export default function MarketBrowsePage() {
           </h1>
         </div>
         <div className="flex items-center gap-4 text-sm">
+          <a
+            href="/market/sell"
+            className="px-4 py-2 rounded-lg bg-gradient-to-r from-[var(--accent-heal)] to-[var(--accent-arcane)] text-white font-bold hover:opacity-90 transition"
+          >
+            스킬 판매하기
+          </a>
+          <span className="text-[var(--text-secondary)]">{user?.username}</span>
           <span className="text-[var(--text-secondary)]">World <span className="text-[var(--accent-lightning)] font-bold">{worldTier}</span></span>
           <span className="text-[var(--text-secondary)]">Points <span className="text-[var(--accent-heal)] font-bold">{points}</span></span>
           <span className="text-[var(--text-secondary)]">RC <span className="text-[var(--accent-arcane)] font-bold">{runeCrystals}</span></span>
@@ -199,73 +253,97 @@ export default function MarketBrowsePage() {
 
       {/* Grid */}
       <div className="flex-1 p-6 overflow-y-auto">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {listings.map((listing) => {
-            const skill = listing.skill;
-            const elemColor = ELEM_COLORS[skill.vfx.material] || '#fff';
-            const owned = purchased.has(listing.id) || mySkills.some((s) => s.name === skill.name);
-            const canAfford = points >= listing.price;
+        {loading && (
+          <div className="text-center py-20">
+            <div className="inline-block w-12 h-12 border-4 border-[var(--accent-arcane)] border-t-transparent rounded-full animate-spin"></div>
+            <p className="mt-4 text-[var(--text-secondary)]">마켓 데이터 로딩 중...</p>
+          </div>
+        )}
 
-            return (
-              <div key={listing.id} className="relative bg-[var(--bg-card)] border border-[var(--border)] rounded-xl overflow-hidden transition-all hover:border-white/10">
-                <div className="h-1" style={{ background: `linear-gradient(90deg, transparent, ${elemColor}, transparent)` }} />
-                <div className="p-4">
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <h3 className="text-sm font-bold text-[var(--text-primary)]">{skill.name}</h3>
-                      <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">{skill.description}</p>
+        {error && (
+          <div className="text-center py-20">
+            <p className="text-red-500 mb-4">{error}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-[var(--accent-arcane)] text-white rounded-lg"
+            >
+              다시 시도
+            </button>
+          </div>
+        )}
+
+        {!loading && !error && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {listings.map((listing) => {
+                const skill = listing.skill;
+                const elemColor = ELEM_COLORS[skill.vfx.material] || '#fff';
+                const owned = mySkills.some((s) => s.name === skill.name);
+                const canAfford = points >= listing.price;
+                const isPurchasing = purchasing === listing.id;
+
+                return (
+                  <div key={listing.id} className="relative bg-[var(--bg-card)] border border-[var(--border)] rounded-xl overflow-hidden transition-all hover:border-white/10">
+                    <div className="h-1" style={{ background: `linear-gradient(90deg, transparent, ${elemColor}, transparent)` }} />
+                    <div className="p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <h3 className="text-sm font-bold text-[var(--text-primary)]">{skill.name}</h3>
+                          <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">{skill.description}</p>
+                        </div>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full border shrink-0 ml-2" style={{ color: elemColor, borderColor: elemColor + '40' }}>
+                          {skill.vfx.material}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-1.5 mb-3">
+                        <MiniStat label="Delivery" value={skill.mechanics.delivery} />
+                        <MiniStat label="Budget" value={`${Math.round(skill.combatBudget)}`} />
+                        <MiniStat label="World" value={`Tier ${skill.worldTier}`} />
+                      </div>
+
+                      <div className="flex flex-wrap gap-1 mb-3">
+                        {skill.mechanics.effects?.map((e: any, i: number) => (
+                          <span key={i} className="text-[8px] px-1.5 py-0.5 rounded-full bg-white/5 text-[var(--text-secondary)]">{e.type}</span>
+                        ))}
+                        {skill.mechanics.keywords?.map((kw: any, i: number) => (
+                          <span key={`kw-${i}`} className="text-[8px] px-1.5 py-0.5 rounded-full border border-[var(--accent-arcane)]/20 text-[var(--accent-arcane)]">
+                            {kw.keyword}{kw.n ? ` ×${kw.n}` : ''}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] text-[var(--text-secondary)] mb-3">
+                        <span>by {listing.sellerName}</span>
+                        <span>{'★'.repeat(Math.round(listing.rating))}{'☆'.repeat(5 - Math.round(listing.rating))} {listing.rating.toFixed(1)}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-bold text-[var(--accent-heal)]">{listing.price} pts</span>
+                        <span className="text-[10px] text-[var(--text-secondary)]">{listing.purchaseCount} 구매</span>
+                      </div>
+
+                      <button
+                        onClick={() => handlePurchase(listing)}
+                        disabled={listing.isLocked || owned || !canAfford || isPurchasing}
+                        className="w-full py-2 rounded-lg text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{
+                          background: owned ? 'var(--bg-secondary)' : listing.isLocked ? 'rgba(239,68,68,0.1)' : `linear-gradient(90deg, ${elemColor}20, ${elemColor}10)`,
+                          border: `1px solid ${owned ? 'var(--border)' : listing.isLocked ? 'rgba(239,68,68,0.3)' : elemColor + '40'}`,
+                          color: owned ? 'var(--text-secondary)' : listing.isLocked ? '#ef4444' : elemColor,
+                        }}
+                      >
+                        {isPurchasing ? '구매 중...' : owned ? '보유 중' : listing.isLocked ? `🔒 World ${skill.worldTier} 도달 시 해금` : !canAfford ? '포인트 부족' : '구매하기'}
+                      </button>
                     </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full border shrink-0 ml-2" style={{ color: elemColor, borderColor: elemColor + '40' }}>
-                      {skill.vfx.material}
-                    </span>
                   </div>
-
-                  <div className="grid grid-cols-3 gap-1.5 mb-3">
-                    <MiniStat label="Delivery" value={skill.mechanics.delivery} />
-                    <MiniStat label="Budget" value={`${Math.round(skill.combatBudget)}`} />
-                    <MiniStat label="World" value={`Tier ${skill.worldTier}`} />
-                  </div>
-
-                  <div className="flex flex-wrap gap-1 mb-3">
-                    {skill.mechanics.effects.map((e, i) => (
-                      <span key={i} className="text-[8px] px-1.5 py-0.5 rounded-full bg-white/5 text-[var(--text-secondary)]">{e.type}</span>
-                    ))}
-                    {skill.mechanics.keywords.map((kw, i) => (
-                      <span key={`kw-${i}`} className="text-[8px] px-1.5 py-0.5 rounded-full border border-[var(--accent-arcane)]/20 text-[var(--accent-arcane)]">
-                        {kw.keyword}{kw.n ? ` ×${kw.n}` : ''}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center justify-between text-[10px] text-[var(--text-secondary)] mb-3">
-                    <span>by {listing.sellerName}</span>
-                    <span>{'★'.repeat(Math.round(listing.rating))}{'☆'.repeat(5 - Math.round(listing.rating))} {listing.rating.toFixed(1)}</span>
-                  </div>
-
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-bold text-[var(--accent-heal)]">{listing.price} pts</span>
-                    <span className="text-[10px] text-[var(--text-secondary)]">{listing.purchaseCount} 구매</span>
-                  </div>
-
-                  <button
-                    onClick={() => handlePurchase(listing)}
-                    disabled={listing.isLocked || owned || !canAfford}
-                    className="w-full py-2 rounded-lg text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    style={{
-                      background: owned ? 'var(--bg-secondary)' : listing.isLocked ? 'rgba(239,68,68,0.1)' : `linear-gradient(90deg, ${elemColor}20, ${elemColor}10)`,
-                      border: `1px solid ${owned ? 'var(--border)' : listing.isLocked ? 'rgba(239,68,68,0.3)' : elemColor + '40'}`,
-                      color: owned ? 'var(--text-secondary)' : listing.isLocked ? '#ef4444' : elemColor,
-                    }}
-                  >
-                    {owned ? '보유 중' : listing.isLocked ? `🔒 World ${skill.worldTier} 도달 시 해금` : !canAfford ? '포인트 부족' : '구매하기'}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        {listings.length === 0 && (
-          <div className="text-center py-20 text-[var(--text-secondary)]">해당 필터에 맞는 스킬이 없습니다.</div>
+                );
+              })}
+            </div>
+            {listings.length === 0 && (
+              <div className="text-center py-20 text-[var(--text-secondary)]">해당 필터에 맞는 스킬이 없습니다.</div>
+            )}
+          </>
         )}
       </div>
     </main>

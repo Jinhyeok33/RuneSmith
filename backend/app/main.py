@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from app.api.compile import router as compile_router
 from app.api.auth import router as auth_router
 from app.api.market import router as market_router
+from app.api.skills import router as skills_router
 from app.database.session import init_db, close_db
 
 # Load environment variables from .env file in project root
@@ -19,11 +20,11 @@ load_dotenv(dotenv_path=env_path)
 async def lifespan(app: FastAPI):
     # Startup
     await init_db()
-    print("✅ Database initialized")
+    print("[OK] Database initialized")
     yield
     # Shutdown
     await close_db()
-    print("✅ Database connections closed")
+    print("[OK] Database connections closed")
 
 
 app = FastAPI(
@@ -35,7 +36,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://localhost:3002", "http://localhost:3001"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -46,8 +47,9 @@ app.add_middleware(
 app.include_router(compile_router)
 app.include_router(auth_router)
 app.include_router(market_router)
+app.include_router(skills_router)
 
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "service": "runesmith-api", "database": "connected"}
+    return {"status": "ok", "service": "runesmith-api", "version": "0.1.1", "database": "connected"}

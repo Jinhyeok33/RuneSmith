@@ -2,7 +2,7 @@
 Skill model for storing player-created skills
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, Float, Boolean
+from sqlalchemy import Column, Integer, BigInteger, String, DateTime, ForeignKey, JSON, Float, Boolean
 from sqlalchemy.orm import relationship
 from app.database.session import Base
 
@@ -17,7 +17,7 @@ class Skill(Base):
     skill_id = Column(String(100), unique=True, nullable=False, index=True)  # UUID
     name = Column(String(100), nullable=False)
     user_input = Column(String(500), nullable=False)  # Original natural language input
-    seed = Column(Integer, nullable=False)
+    seed = Column(BigInteger, nullable=False)
 
     # World & Budget metadata
     world_tier = Column(Integer, nullable=False, index=True)

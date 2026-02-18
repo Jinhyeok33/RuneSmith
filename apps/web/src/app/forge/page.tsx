@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import { compileBlueprint } from '@runesmith/shared';
 import type { SkillBlueprint, LLMParserOutput } from '@runesmith/shared';
 import { compileSkill } from '@/lib/api/compile';
+import { apiClient } from '@/lib/api/client';
 import { useGameStore } from '@/lib/store/game-store';
 import PreviewCanvas from '@/components/three/preview-canvas';
 
@@ -68,13 +69,41 @@ export default function ForgePage() {
     }
   }, [worldTier, extraVfx, setLastCompiledSkill]);
 
-  const handleSave = useCallback(() => {
+  const isAuthenticated = useGameStore((s) => s.isAuthenticated);
+
+  const handleSave = useCallback(async () => {
     if (!compiledSkill) return;
+
+    // Save to Zustand (local)
     addSkill(compiledSkill);
+
+    // Also save to DB if authenticated (so it can be sold on market)
+    if (isAuthenticated) {
+      try {
+        await apiClient.saveSkill({
+          skill_id: compiledSkill.id,
+          name: compiledSkill.name,
+          user_input: userInput || compiledSkill.description || compiledSkill.name,
+          seed: compiledSkill.seed,
+          world_tier: compiledSkill.worldTier,
+          combat_budget: compiledSkill.combatBudget,
+          combat_budget_max: compiledSkill.combatBudgetMax,
+          vfx_budget: compiledSkill.vfxBudget,
+          vfx_budget_base: compiledSkill.vfxBudgetBase,
+          vfx_budget_paid: compiledSkill.vfxBudgetPaid,
+          mechanics: compiledSkill.mechanics,
+          vfx: compiledSkill.vfx,
+          stats: compiledSkill.stats,
+        });
+      } catch {
+        console.warn('Failed to save skill to server, saved locally only');
+      }
+    }
+
     setPhase('input');
     setCompiledSkill(null);
     setUserInput('');
-  }, [compiledSkill, addSkill]);
+  }, [compiledSkill, addSkill, isAuthenticated, userInput]);
 
   const handleReset = useCallback(() => {
     setPhase('input');
