@@ -83,7 +83,11 @@ export const useGameStore = create<GameState>()(
       setWorldTier: (tier) => set({ worldTier: tier }),
 
   addSkill: (skill) =>
-    set((state) => ({ skills: [...state.skills, skill] })),
+    set((state) => ({
+      skills: state.skills.some((s) => s.id === skill.id)
+        ? state.skills.map((s) => (s.id === skill.id ? skill : s))
+        : [...state.skills, skill],
+    })),
 
   removeSkill: (id) =>
     set((state) => ({
