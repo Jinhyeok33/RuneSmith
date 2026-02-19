@@ -68,6 +68,11 @@ async def get_db():
 # Initialize database (create tables)
 async def init_db():
     """Initialize database tables"""
+    if _is_remote:
+        # Skip create_all for remote DBs (Supabase pgbouncer doesn't support
+        # the multiple prepared statements that create_all uses internally).
+        # Tables should be created via Supabase SQL Editor or migrations.
+        return
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
