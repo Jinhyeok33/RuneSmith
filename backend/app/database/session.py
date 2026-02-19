@@ -30,10 +30,9 @@ if _is_remote:
     ssl_ctx.verify_mode = ssl.CERT_NONE
     _engine_kwargs["connect_args"] = {
         "ssl": ssl_ctx,
-        "prepared_statement_cache_size": 0,
         "statement_cache_size": 0,
+        "prepared_statement_name_func": lambda: "",
     }
-    # Use NullPool for pgbouncer compatibility (no client-side pooling)
     _engine_kwargs["poolclass"] = NullPool
 else:
     _engine_kwargs["pool_pre_ping"] = True
